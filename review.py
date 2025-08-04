@@ -151,9 +151,8 @@ class BookReviews:
 
 
 if __name__ == '__main__':
-    url = 'https://m.sfacg.com/b/49038/'
-    # url = "https://m.sfacg.com/b/375446/"
+    # url = 'https://m.sfacg.com/b/49038/'
+    # url = 'https://m.sfacg.com/b/689388/'
+    url = 'https://m.sfacg.com/b/43708/'
     b = BookReviews(url)
-
-    ids = b.download_reviews()
-    print(ids)
+    b.download_reviews()
