@@ -1,21 +1,13 @@
-MIT License
+License
 
 Copyright (c) 2025 Interset Wq
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. 本项目仅用于学习Python常用库requests，bs4，tkinter等，开发者不对用户的使用行为及
+结果承担任何责任。因违反本许可证条款、相关法律法规或侵犯第三方合法权益（包括但不限于
+版权、隐私权、服务器权益等）产生的任何纠纷、索赔、行政处罚或刑事责任，均由用户自行承
+担。
+2. 本项目不保证功能的完整性、稳定性及适用性，不对使用过程中因程序漏洞、运行故障导致
+的任何直接或间接损失（包括但不限于数据丢失、设备损坏、业务中断等）承担赔偿责任。
+3. 通过本工具下载的内容禁止在网络上进行传播
+4. 使用者应自行评估使用本工具的法律风险，确认行为的合法性。如对本许可证有异议，请勿
+使用本项目。
