@@ -1,44 +1,14 @@
 import requests
 from bs4 import BeautifulSoup, Tag, NavigableString
 from loguru import logger
+from ch import Chapter
+from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
+from time import sleep
 
 HEADERS = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
-
-class MobileChapter:
-    """处理移动端章节
-    Args:
-        title: str 小说标题
-        url: str 小说url
-    """
-
-    def __init__(self, title: str, url: str):
-        self.url = url
-        self.title = title
-        self.headers = HEADERS
-
-    def __repr__(self):
-        return f'{self.__class__.__name__}(title="{self.title}", url="{self.url}")'
-
-    def get_chapter_content(self):
-        """获取章节内容"""
-        logger.info(f'{self.title} {self.url}')
-        response = requests.get(self.url, headers=self.headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        content = f'### {self.title}\n\n'
-        children = [child.name for child in soup.div.div.children]
-        for child in soup.div.div.children:
-            if type(child) == NavigableString and str(child).strip() != '':
-                content += f"{str(child).strip()}\n\n"
-            elif child.name == "img":
-                content += f"![]({child['src']})\n\n"
-            elif child.name == "p":
-                content += f"{child.get_text()}\n\n"
-            elif child.name == "br":
-                continue
-        self.content = content.strip()
-        return content.strip()
 
 class Volume:
     """卷"""
@@ -48,6 +18,21 @@ class Volume:
         self.title = vol_tag.string
         self.vol_tag = vol_tag.next_sibling.next_sibling.ul
 
+    def __repr__(self):
+        return f'Volume({self.title})'
+
+    def _get_chapters(self, chapter_dict: dict) -> str:
+        text = ''
+        futures = []
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            for i, (chapter_title, chapter_url) in enumerate(chapter_dict.items()):
+                chapter = Chapter(chapter_title, chapter_url)
+                future = executor.submit(chapter.get_chapter_content)
+                futures.append((i, future))
+        for _, future in futures:
+            text += future.result()
+        return text + '\n\n'
+
     def get_volume_content(self):
         """获取本卷内容"""
         logger.info(f'{self.title}')
@@ -55,11 +40,8 @@ class Volume:
         chapters = {}
         for a_tag in self.vol_tag.find_all('a'):
             chapters[a_tag.get_text()] = self.base_url + a_tag['href']
-        for chapter_title, chapter_url in chapters.items():
-            chapter = MobileChapter(chapter_title, chapter_url)
-            chapter_content = chapter.get_chapter_content()
-            volume_content += chapter_content + '\n\n'
-        return volume_content
+        return volume_content + self._get_chapters(chapters)
+
 
 class Novel:
     """小说内容"""
@@ -98,7 +80,8 @@ class Novel:
         self.click_num, self.date, self.clock = click_and_new.split()
         smalls = soup.find_all('small')
         self.heart_num, self.praise_num, _ = [small.string.strip() for small in smalls]
-        self.intro = soup.find(class_='book_bk_qs1').string
+        intro = soup.find(class_='book_bk_qs1').string
+        self.intro = '\n\n'.join(line.strip() for line in intro.split('\n\n'))
         return f"""
 # {self.title}-{self.author}
 
@@ -149,12 +132,13 @@ if __name__ == '__main__':
     url = 'https://m.sfacg.com/c/9090775/'
     # url = 'https://book.sfacg.com/Novel/744362/985558/9090775/'
     # novel_url = 'https://m.sfacg.com/b/751089/'
-    # nid = 751089
-    # novel = Novel(nid)
-    # novel.download_novel()
+    # https://m.sfacg.com/b/752997/
+    nid = 751089
+    # nid = 752997
+    nid = 5976
+    novel = Novel(nid)
+    novel.download_novel()
     # info = novel.get_novel_info()
-    # print(novel.author)
-    # print(novel.label)
     # print(info)
 
 
