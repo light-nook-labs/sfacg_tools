@@ -8,6 +8,7 @@ import json
 import re
 import os
 import os.path
+from pathlib import Path
 
 
 HEADERS = {
@@ -18,10 +19,18 @@ MAX_INVALID = 10
 JSON_PATH = './audiobooks.json'
 
 def get_audiobook_list(i: int=0) -> list[int]:
-    """获取有声小说列表，返回有效ID列表，并保存为JSON文件"""
+    """获取有声小说列表，并保存为json
 
-    valid_ids: list[int] = []
-    valid_titles: list[str] = []
+    Args:
+        i (int): 起始编号，不包括
+
+    Returns:
+        list[int]: 有声小说编号列表
+    """
+
+    valid_ids: list[int] = [] # 有效编号
+    valid_titles: list[str] = [] # 有效编号对应的标题
+
     while True:
         i += 1
         if len(valid_ids) < 1:
@@ -42,8 +51,8 @@ def get_audiobook_list(i: int=0) -> list[int]:
                 valid_titles.append(title)
                 logger.info(f'{i} {title}')
         except Exception as e:
-            logger.error(i, audio_url, e)
-            continue
+            logger.error(type(e))
+            raise
 
     # 保存为JSON文件
     if valid_ids:
@@ -58,9 +67,14 @@ def get_audiobook_list(i: int=0) -> list[int]:
 
 
 class AudioChapter:
-    """有声小说章节"""
+    """有声小说章节
 
-    def __init__(self, title: str='第一章 邪道主人公变成美少女（1）', url: str='/a/91682/'):
+    Args:
+        title (str): 章节标题
+        url (str)： 短url， '/a/91682/'
+    """
+
+    def __init__(self, title: str, url: str):
         self.title = title
         self.url = BASE_URL + url
 
@@ -90,13 +104,14 @@ class AudioChapter:
         """下载音频
 
         Args:
-
-            path 下载目录
+            path 下载目录，请不要忘记'/'
             force 如果文件存在是否覆盖
         """
+
         path = f'{path}{self.title}.mp3'
         mp3_url = self.get_mp3_url()
         if not mp3_url:
+            logger.error('下载失败')
             return
         if force:
             content = requests.get(mp3_url, headers=HEADERS).content
@@ -104,11 +119,13 @@ class AudioChapter:
                 f.write(content)
             logger.info(f'下载完成{self.title}{self.url}')
 
+
 class AudioVolume:
     """有声小说卷"""
 
     def __init__(self, tag: Tag, prefix: bool=True):
         self.tag = tag.next_sibling.next_sibling.ul
+        self.title = tag.string
         self.prefix = prefix
 
     def get_volume_dict(self):
@@ -120,10 +137,13 @@ class AudioVolume:
         return volumn_dict
 
     def download_volume(self, path: str='./', force: bool=True) -> None:
+        path += self.title + '/'
+        os.makedirs(path, exist_ok=True)
         with ThreadPoolExecutor(max_workers=5) as executor:
             for href, text in self.get_volume_dict().items():
                 chapter = AudioChapter(text, href)
                 executor.submit(chapter.download_mp3, path=path, force=force)
+                sleep(.5)
 
 class Audio:
     """有声小说"""
@@ -138,13 +158,14 @@ class Audio:
 
             # 遍历数组查找匹配id的条目
             for item in data_list:
-                if item.get("id") == id:
+                if item.get("id", 0) == id:
                     self.title = item.get("title")
                     break  # 找到后退出循环
             else:
                 # 如果循环结束未找到匹配id
                 logger.warning('请尝试调用get_audiobook_list()函数更新json文件')
                 raise ValueError(f"未找到id为{id}的有声小说")
+
         else:
             logger.warning('请尝试调用get_audiobook_list()函数更新json文件')
             raise FileNotFoundError(f"JSON文件不存在: {JSON_PATH}")
@@ -158,21 +179,22 @@ class Audio:
             return volume_tags
         except Exception as e:
             logger.error('卷目录获取失败')
-            return []
+            raise
 
-    def download(self):
+    def download(self, path='./'):
+        path += self.title + '/'
+        os.makedirs(path, exist_ok=True)
         volume_tags = self._get_volume_list()
-        for volume_tag in volume_tags:
-            volume = AudioVolume(volume_tag)
-            volume.download_volume(path='./audio/', force=True)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            for volume_tag in volume_tags:
+                volume = AudioVolume(volume_tag)
+                executor.submit(volume.download_volume, path, force=True)
+                sleep(3)
 
 
 if __name__ == '__main__':
-    id = 555
+    # get_audiobook_list()
+    id = 153
+    path = 'E:/有声小说/'
     audio = Audio(id)
-    audio.download()
-    # volumes_tags = audio._get_volume_list()
-    # volume_tag = volumes_tags[0]
-    # volume = AudioVolume(volume_tag)
-    # volume_dict = volume.get_volume_dict()
-    # print(volume_dict)
+    audio.download(path)

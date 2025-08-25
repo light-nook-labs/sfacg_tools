@@ -64,6 +64,7 @@ class ComicChapter:
             # 一次性提交所有下载任务
             for id, image_url in enumerate(self.get_image_urls(), start=1):
                 executor.submit(self._download_image, id, image_url, path)
+                sleep(.5)
 
 
 class Comic:
@@ -122,6 +123,7 @@ class Comic:
                 os.makedirs(chapter_path, exist_ok=False)
                 chapter = ComicChapter(title=chapter_title, url=BASE_URL+href)
                 executer.submit(chapter.download, chapter_path)
+                sleep(3)
                 logger.info(f'{chapter_title} downloaded')
 
 
@@ -130,6 +132,7 @@ if __name__ == '__main__':
     # chapter_url = 'https://mm.sfacg.com/b/ZXNWM/ZP/0002_4857/'
     comic_url = 'https://mm.sfacg.com/b/ZXNWM/'
     comic = Comic(comic_url)
-    info = comic.get_comic_info()
+    # info = comic.get_comic_info()
     # print(info)
-    comic.download()
+    path = 'e:/漫画/'
+    comic.download(path=path)
