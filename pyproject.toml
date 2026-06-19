@@ -1,0 +1,12 @@
+[project]
+name = "sfacg"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "ebooklib>=0.20",
+    "loguru>=0.7.3",
+    "requests>=2.34.2",
+]
