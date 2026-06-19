@@ -1,118 +1,161 @@
 from ebooklib import epub
-from bs4 import BeautifulSoup, Tag
-import requests
-from uuid import uuid4
-import os
-from urllib.parse import urlparse
-
 from ebooklib.epub import EpubHtml
+from bs4 import BeautifulSoup, Tag
+from uuid import uuid4
+from pathlib import Path
+from loguru import logger
+from urllib.parse import urlparse
+from .fetcher import Fetcher
+from .config import WORKERS_EPUB_IMG
+from .utils import run_tasks
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+_MEDIA_TYPES = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
 }
 
 
-def download_epub(html: str, title: str, author: str, desc: str, cover: str, path: str='./') -> None:
+def _detect_media_type(url: str, fallback: str = 'image/jpeg') -> str:
+    ext = urlparse(url).path.rsplit('.', 1)[-1].lower() if '.' in urlparse(url).path else ''
+    return _MEDIA_TYPES.get(f'.{ext}', fallback)
 
-    # 创建电子书对象
+
+def _process_images(
+    book: epub.EpubBook,
+    container: Tag,
+    fetcher: Fetcher,
+) -> None:
+    img_tasks: list[tuple[Tag, str]] = []
+    for img in container.find_all('img'):
+        img_url = img.get('src', '')
+        if img_url:
+            img_tasks.append((img, img_url))
+
+    if not img_tasks:
+        return
+
+    tasks = {url: url for _, url in img_tasks}
+
+    def _fetch(url: str) -> bytes:
+        try:
+            return fetcher.get_binary(url)
+        except Exception as e:
+            logger.warning(f'图片下载失败: {url}: {e}')
+            return b''
+
+    results_list = run_tasks(tasks, _fetch, WORKERS_EPUB_IMG, 'Images', leave=False)
+    results: dict[str, bytes] = {url: data for url, data in results_list if data}
+
+    for img, url in img_tasks:
+        if url not in results:
+            continue
+        fname = f'image_{str(uuid4())[:8]}'
+        media_type = _detect_media_type(url)
+        ext = media_type.split('/')[-1].replace('jpeg', 'jpg')
+        book.add_item(epub.EpubImage(
+            uid=str(uuid4()),
+            file_name=f'images/{fname}.{ext}',
+            media_type=media_type,
+            content=results[url],
+        ))
+        img['src'] = f'images/{fname}.{ext}'
+
+
+def download_epub(
+    html: str,
+    title: str,
+    author: str,
+    desc: str,
+    cover: str,
+    path: str | Path = './',
+    fetcher: Fetcher | None = None,
+) -> None:
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    fetcher = fetcher or Fetcher()
+
     book = epub.EpubBook()
-
-    # 设置书籍元数据
-    book.set_identifier(str(uuid4()))  # 唯一标识符
+    book.set_identifier(str(uuid4()))
     book.set_title(title)
     book.set_language('zh')
     book.add_author(author)
     book.add_metadata('DC', 'description', desc)
 
-    # 处理封面
     try:
-        cover_content = requests.get(url=cover, headers=HEADERS, timeout=10).content
-        book.set_cover("cover.jpg", cover_content)
+        book.set_cover('cover.jpg', fetcher.get_binary(cover))
     except Exception as e:
-        print(f"封面下载失败: {e}")
+        logger.warning(f'封面下载失败: {e}')
 
     spine: list[str | EpubHtml] = ['nav']
-    toc = []
+    toc: list = []
 
-    # 解析HTML内容
     soup = BeautifulSoup(html, 'html.parser')
-    for vol_tag in soup.find_all(class_='vol'):
-        vol_title = vol_tag.h2.get_text() if vol_tag.h2 else "未命名卷"
+    vol_tags = soup.find_all(class_='vol')
 
-        # 创建卷节点
-        vol = epub.EpubHtml(
-            title=vol_title,
-            file_name=f'vol_{str(uuid4())[:8]}.xhtml',  # 使用短UUID避免路径过长
-            lang='zh',
-            content=str(vol_tag.h2) if vol_tag.h2 else ""
-        )
-        if not vol_tag.h3:
-            vol.content = str(vol_tag)
-        book.add_item(vol)
-        spine.append(vol)
+    info_page = None
+    vol_sections = []
 
-        chapters = []
-        for ch_tag in vol_tag.find_all(class_='ch'):
-            # 获取章节标题
-            if ch_tag.h3:
-                chapter_title = ch_tag.h3.get_text()
-            else:
-                # chapter_title = '未命名章节'
-                continue
-            # 处理章节中的图片
-            imgs: list[Tag] = ch_tag.find_all('img')
-            for img in imgs:
-                if 'src' not in img.attrs:
-                    continue  # 跳过没有src属性的图片
+    for vol_tag in vol_tags:
+        vol_title = vol_tag.h2.get_text() if vol_tag.h2 else ''
+        ch_tags = vol_tag.find_all(class_='ch')
 
-                img_url = img['src']
-                try:
-                    img_filename = f"image_{str(uuid4())[:8]}.jpg"
-
-                    # 下载图片内容
-                    img_content = requests.get(url=img_url, headers=HEADERS, timeout=10).content
-
-                    # 创建图片项
-                    img_item = epub.EpubImage(
-                        uid=str(uuid4()),
-                        file_name=f"images/{img_filename}",  # 统一放到images目录
-                        media_type='image/jpeg',  # 可以根据实际情况调整
-                        content=img_content
-                    )
-                    book.add_item(img_item)
-
-                    # 更新HTML中的图片路径
-                    img['src'] = f"images/{img_filename}"
-
-                except Exception as e:
-                    print(f"处理图片 {img_url} 失败: {e}")
-                    # 出错时移除图片标签或保留原始URL
-                    # img.decompose()  # 移除无法处理的图片
-
-            # 创建章节
-            chapter = epub.EpubHtml(
-                title=chapter_title,
-                file_name=f'ch_{str(uuid4())[:8]}.xhtml',  # 使用短UUID
+        if not ch_tags:
+            _process_images(book, vol_tag, fetcher)
+            page = epub.EpubHtml(
+                title=vol_title or title,
+                file_name=f'intro_{str(uuid4())[:8]}.xhtml',
                 lang='zh',
-                content=str(ch_tag)
+                content=str(vol_tag),
             )
+            book.add_item(page)
+            spine.append(page)
+            info_page = page
+        else:
+            _process_images(book, vol_tag, fetcher)
 
-            chapters.append(chapter)
-            book.add_item(chapter)
-            spine.append(chapter)
+            vol_page = epub.EpubHtml(
+                title=vol_title,
+                file_name=f'vol_{str(uuid4())[:8]}.xhtml',
+                lang='zh',
+                content=str(vol_tag.h2) if vol_tag.h2 else '',
+            )
+            book.add_item(vol_page)
+            spine.append(vol_page)
 
-        # 添加到目录
-        vol_tuple = (epub.Section(vol_title), tuple(chapters))
-        toc.append(vol_tuple)
+            chapters = []
+            for ch_tag in ch_tags:
+                if not ch_tag.h3:
+                    continue
+                ch_title = ch_tag.h3.get_text()
+                ch_page = epub.EpubHtml(
+                    title=ch_title,
+                    file_name=f'ch_{str(uuid4())[:8]}.xhtml',
+                    lang='zh',
+                    content=str(ch_tag),
+                )
+                chapters.append(ch_page)
+                book.add_item(ch_page)
+                spine.append(ch_page)
+
+            vol_sections.append((epub.Section(vol_title), tuple(chapters)))
+
+    if info_page:
+        toc.append(info_page)
+    toc.extend(vol_sections)
 
     book.toc = tuple(toc)
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
     book.spine = spine
 
-    # 写入电子书
+    safe_title = title.replace('/', '_').replace('\\', '_')
+    epub_path = path / f'{safe_title}.epub'
     try:
-        epub.write_epub(name=f'{path}{title}.epub', book=book)
-        print("电子书生成成功")
+        epub.write_epub(name=str(epub_path), book=book)
+        logger.bind(force=True).info(f'电子书生成成功: {epub_path}')
     except Exception as e:
-        print(f"生成电子书失败: {e}")
+        logger.error(f'生成电子书失败: {e}')

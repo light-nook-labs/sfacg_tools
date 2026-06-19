@@ -134,6 +134,19 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Auth cookies
+.cookies.json
+
+# Progress database
+sfacglib/progress.db
+
+# Audiobooks cache
+sfacglib/audiobooks.json
+
+# Downloaded content
+*.epub
+*.mp3
+
 # Environments
 .env
 .envrc

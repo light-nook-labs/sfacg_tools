@@ -1,0 +1,208 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "last_verified": "2026-06-19",
+    "description": "CSS selectors for SFACG pages. When selectors break, use chrome-devtools-mcp to navigate to the page and verify the correct selector."
+  },
+
+  "novel_info": {
+    "container": {
+      "selector": ".book_info",
+      "description": "Novel info container on mobile novel page"
+    },
+    "title": {
+      "selector": ".book_info span",
+      "description": "Novel title text"
+    },
+    "cover": {
+      "selector": ".book_info img",
+      "attr": "src",
+      "description": "Cover image URL"
+    },
+    "labels": {
+      "selector": ".book_info div",
+      "description": "Novel labels/tags container"
+    },
+    "stats": {
+      "selector": ".book_info3",
+      "description": "Author, word count, click count (slash-separated)"
+    },
+    "counts": {
+      "selector": "small",
+      "description": "Heart count, praise count, etc."
+    },
+    "introduction": {
+      "selector": ".book_bk_qs1",
+      "description": "Novel introduction/synopsis"
+    }
+  },
+
+  "novel_menu": {
+    "volume_tags": {
+      "selector": ".mulu",
+      "description": "Volume section headers on menu page"
+    },
+    "volume_title": {
+      "description": "Volume title (the tag's string content, no selector needed)"
+    },
+    "chapter_links": {
+      "selector": "ul a",
+      "description": "Chapter links within a volume"
+    }
+  },
+
+  "chapter_mobile": {
+    "title": {
+      "selector": "title",
+      "description": "Page title, format: 'xxx - 章节名 - SF轻小说手机版'"
+    },
+    "content_container": {
+      "selector": "div > div",
+      "description": "Main content container (first div > div on page)"
+    },
+    "paragraphs": {
+      "selector": "p",
+      "description": "Text paragraphs"
+    },
+    "images": {
+      "selector": "img",
+      "attr": "src",
+      "description": "Inline images in chapter content"
+    }
+  },
+
+  "chapter_pc": {
+    "header": {
+      "selector": ".article-hd",
+      "description": "Chapter header container"
+    },
+    "title": {
+      "selector": ".article-hd h1",
+      "description": "Chapter title"
+    },
+    "meta_info": {
+      "selector": ".article-hd .text",
+      "description": "Chapter metadata (word count, update time, etc.)"
+    },
+    "content": {
+      "selector": "#ChapterBody",
+      "description": "Chapter body content"
+    }
+  },
+
+  "chapter_vip": {
+    "header": {
+      "selector": ".article-hd",
+      "description": "VIP chapter header container"
+    },
+    "title": {
+      "selector": ".article-hd .article-title",
+      "description": "VIP chapter title"
+    },
+    "meta_info": {
+      "selector": ".article-hd .text",
+      "description": "VIP chapter metadata"
+    },
+    "content": {
+      "selector": "#ChapterBody",
+      "description": "VIP chapter body (may contain truncated text or be empty)"
+    },
+    "vip_image": {
+      "selector": "#vipImage",
+      "attr": "src",
+      "description": "VIP content rendered as GIF image (anti-scraping)"
+    },
+    "is_vip_script": {
+      "selector": "script",
+      "description": "Script tags, look for 'isVip = true' to detect VIP chapters"
+    }
+  },
+
+  "comic_info": {
+    "container": {
+      "selector": ".book_info",
+      "description": "Comic info container"
+    },
+    "title": {
+      "selector": ".book_newtitle",
+      "description": "Comic title"
+    },
+    "cover": {
+      "selector": ".book_info img",
+      "attr": "src",
+      "description": "Comic cover image"
+    },
+    "labels": {
+      "selector": ".book_info2",
+      "description": "Comic tags/labels"
+    },
+    "stats": {
+      "selector": ".book_info3",
+      "description": "Comic stats"
+    },
+    "interactions": {
+      "selector": ".book_interact",
+      "description": "Favorites, likes, etc."
+    },
+    "description": {
+      "selector": ".book_profile",
+      "description": "Comic description/synopsis"
+    },
+    "chapter_list": {
+      "selector": ".comic_main_list a",
+      "description": "Comic chapter links"
+    }
+  },
+
+  "comic_chapter": {
+    "scripts": {
+      "selector": "script",
+      "description": "Script tags containing comicId, nv, chapterId variables"
+    }
+  },
+
+  "audio_page": {
+    "title": {
+      "selector": "title",
+      "description": "Page title, format: 'xxx音频列表 - SF轻小说手机版'"
+    },
+    "volume_tags": {
+      "selector": ".mulu",
+      "description": "Volume section headers"
+    },
+    "chapter_links": {
+      "selector": "ul a",
+      "description": "Audio chapter links within a volume"
+    },
+    "chapter_title": {
+      "selector": "li",
+      "description": "Audio chapter title within a link"
+    }
+  },
+
+  "review_detail": {
+    "title": {
+      "selector": "title",
+      "description": "Page title, suffix: '-书评详情-SF轻小说手机版'"
+    },
+    "content": {
+      "selector": "p",
+      "description": "Review content (first <p> on page)"
+    },
+    "date_container": {
+      "selector": "div span",
+      "description": "Date container (format: 'xxx 2024-01-01 12:00')"
+    },
+    "interactions": {
+      "selector": ".shuping_hudong.book_bk_qs1",
+      "description": "Reply count and praise count"
+    }
+  },
+
+  "review_list": {
+    "title": {
+      "selector": "title",
+      "description": "Page title, suffix: '小说书评列表-SF轻小说手机版'"
+    }
+  }
+}

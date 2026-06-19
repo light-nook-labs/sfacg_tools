@@ -1,55 +1,60 @@
-from time import sleep
-import requests
+import re
+from pathlib import Path
 from bs4 import BeautifulSoup, NavigableString, Tag
 from loguru import logger
 from abc import ABC, abstractmethod
-import os.path
+from .fetcher import Fetcher
+from .selectors import Selectors, SelectorError
+from .config import API_VIP_IMAGE, PC_BASE, MOBILE_BASE
 
-HEADERS = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
 
 class Ch(ABC):
-    """小说章节抽象类
+    """小说章节抽象类"""
 
-    Args:
-        url(str): 小说url
-    """
-
-    headers = HEADERS
-
-    def __init__(self, url: str=''):
+    def __init__(self, url: str = '', fetcher: Fetcher | None = None, selectors: Selectors | None = None):
         self.url = url
-        self.title = ''
+        self.title: str = ''
+        self.fetcher = fetcher or Fetcher()
+        self.sel = selectors or Selectors()
 
     def __repr__(self):
         return f'<{self.__class__.__name__}>'
 
-    def _download(self, parent_dir: str='./', file_type: str='md'):
+    def _download(self, parent_dir: str | Path = './', file_type: str = 'md'):
         content = self.get_chapter_content()
-        path = f'{parent_dir}{self.title}.{file_type}'
-        if file_type in ['md', 'txt']:
-            chapter_txt = content[0]
-        elif file_type == 'html':
-            chapter_txt = content[1]
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(chapter_txt)
-            logger.info(f'下载完成 {self.title} {self.url}')
+        path = Path(parent_dir) / f'{self.title}.{file_type}'
+        text = content[0] if file_type in ('md', 'txt') else content[1]
+        path.write_text(text, encoding='utf-8')
+        logger.bind(force=True).info(f'下载完成 {self.title}')
 
     def _soup(self) -> BeautifulSoup:
-        """发送请求"""
-        response = requests.get(self.url, headers=self.headers)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        return soup
+        html = self.fetcher.get_html(self.url)
+        return BeautifulSoup(html, 'html.parser')
 
-    def download(self, parent_dir: str='./', file_type: str='md', force: bool=True) -> None:
+    def download(self, parent_dir: str | Path = './', file_type: str = 'md', force: bool = True) -> None:
         if force:
             self._download(parent_dir, file_type)
 
+    def _parse_children(self, container: Tag) -> str:
+        """Parse chapter content children into markdown. Shared by mobile and PC."""
+        md = ''
+        for child in container.children:
+            if isinstance(child, NavigableString):
+                text = str(child).strip()
+                if text:
+                    md += f'{text}\n\n'
+            elif isinstance(child, Tag):
+                if child.name == 'img':
+                    src = child.get('src', '')
+                    md += f'![]({src})\n\n'
+                elif child.name == 'p':
+                    md += f'{child.get_text().strip()}\n\n'
+                elif child.name == 'br':
+                    continue
+        return md
 
     @abstractmethod
-    def get_chapter_content(self) -> tuple[str]:
+    def get_chapter_content(self) -> tuple[str, str]:
         pass
 
 
@@ -57,77 +62,160 @@ class MobileChapter(Ch):
     """处理移动端章节"""
 
     def get_chapter_content(self) -> tuple[str, str]:
-        """获取章节内容"""
-        sleep(0.2)
         soup = self._soup()
-        title = soup.title.get_text().split(' - ')[1]
+
+        title_tag = soup.title
+        if title_tag and ' - ' in title_tag.get_text():
+            title = title_tag.get_text().split(' - ')[1]
+        else:
+            title = self.sel.find_text(soup, 'chapter_mobile', 'title', url=self.url) or '未知章节'
         self.title = title
-        content_html = soup.div.div
-        del content_html['style']
+
+        content_html = self.sel.find(soup, 'chapter_mobile', 'content_container', url=self.url)
+        if content_html and content_html.has_attr('style'):
+            del content_html['style']
+
         content_md = f'### {self.title}\n\n'
-        for child in content_html.children:
-            if type(child) == NavigableString and str(child).strip() != '':
-                content_md += f"{str(child).strip()}\n\n"
-            elif type(child) == Tag and child.name == "img":
-                content_md += f"![]({child['src']})\n\n"
-            elif type(child) == Tag and child.name == "p":
-                content_md += f"{child.get_text().strip()}\n\n"
-            elif type(child) == Tag and child.name == "br":
-                continue
+        if content_html:
+            content_md += self._parse_children(content_html)
+
         content_md = content_md.lstrip()
-        content_html = f'<div class="ch"><h3>{self.title}</h3>' + str(content_html) + '</div>'
-        return content_md, content_html
+        html_str = f'<div class="ch"><h3>{self.title}</h3>{str(content_html) if content_html else ""}</div>'
+        return content_md, html_str
 
 
 class PCChapter(Ch):
     """处理PC端章节"""
 
     def get_chapter_content(self) -> tuple[str, str]:
-        """获取章节内容"""
-        sleep(0.2)
         soup = self._soup()
-        info_tag = soup.find(class_='article-hd')
-        title = info_tag.find('h1').get_text().strip()
+
+        self.sel.find(soup, 'chapter_pc', 'header', url=self.url)
+        title_tag = self.sel.find(soup, 'chapter_pc', 'title', url=self.url)
+        title = title_tag.get_text().strip() if title_tag else '未知章节'
         self.title = title
-        other_info_tags = info_tag.find_all(class_='text')
-        other_info = '\t'.join(other_info_tag.get_text() for other_info_tag in other_info_tags)
-        content_tag = soup.find(id='ChapterBody')
-        del content_tag['class'], content_tag['data-class'], content_tag['id']
-        content_html = f'<h3>{title}</h3><p>{other_info}</p>{str(content_tag)}'
+
+        other_info_tags = self.sel.find_all(soup, 'chapter_pc', 'meta_info', url=self.url, required=False)
+        other_info = '\t'.join(tag.get_text() for tag in other_info_tags) if other_info_tags else ''
+
+        content_tag = self.sel.find(soup, 'chapter_pc', 'content', url=self.url)
+        if content_tag:
+            for attr in ('class', 'data-class', 'id'):
+                content_tag.attrs.pop(attr, None)
+
+        content_html = f'<h3>{title}</h3><p>{other_info}</p>{str(content_tag) if content_tag else ""}'
         content_md = f'### {title}\n\n{other_info}\n\n'
-        for child_tag in content_tag.children:
-            if type(child_tag) == NavigableString and str(child_tag).strip() != '':
-                content_md += f"{str(child_tag).strip()}\n\n"
-            elif type(child_tag) == Tag and child_tag.name == "img":
-                content_md += f"![]({child_tag['src']})\n\n"
-            elif type(child_tag) == Tag and child_tag.name == "p":
-                content_md += f"{child_tag.get_text().strip()}\n\n"
-            elif type(child_tag) == Tag and child_tag.name == "br":
-                continue
+
+        if content_tag:
+            content_md += self._parse_children(content_tag)
+
         return content_md, f'<div class="ch">{content_html}</div>'
+
+
+class VIPChapter(Ch):
+    """处理VIP章节（内容为GIF图片，需OCR提取文字）"""
+
+    IMAGE_API_BASE = API_VIP_IMAGE
+
+    def _is_vip(self, soup: BeautifulSoup) -> bool:
+        if soup.select_one('#vipImage'):
+            return True
+        for script in soup.find_all('script'):
+            txt = script.string or ''
+            if 'isVip' in txt and 'true' in txt:
+                return True
+        return False
+
+    def _get_image_url(self, soup: BeautifulSoup) -> str | None:
+        vip_img = self.sel.find(soup, 'chapter_vip', 'vip_image', url=self.url, required=False)
+        if vip_img:
+            src = vip_img.get('src', '')
+            if src.startswith('/'):
+                src = PC_BASE + src
+            return src
+
+        for script in soup.find_all('script'):
+            txt = script.string or ''
+            if 'getChapPic' in txt:
+                match = re.search(r"['\"]([^'\"]*getChapPic[^'\"]*)['\"]", txt)
+                if match:
+                    src = match.group(1)
+                    if src.startswith('/'):
+                        src = PC_BASE + src
+                    return src
+        return None
+
+    def _extract_chapter_ids(self, soup: BeautifulSoup) -> tuple[str, str]:
+        novel_id, chapter_id = '', ''
+        for script in soup.find_all('script'):
+            txt = script.string or ''
+            if 'novelID' in txt:
+                m = re.search(r'var\s+novelID\s*=\s*(\d+)', txt)
+                if m:
+                    novel_id = m.group(1)
+            if 'chapterID' in txt:
+                m = re.search(r'var\s+chapterID\s*=\s*(\d+)', txt)
+                if m:
+                    chapter_id = m.group(1)
+        return novel_id, chapter_id
+
+    def _build_image_url(self, soup: BeautifulSoup) -> str:
+        img_url = self._get_image_url(soup)
+        if img_url:
+            return img_url
+
+        novel_id, chapter_id = self._extract_chapter_ids(soup)
+        if novel_id and chapter_id:
+            return f'{self.IMAGE_API_BASE}?op=getChapPic&tp=true&quick=true&cid={chapter_id}&nid={novel_id}&font=16&lang=&w=728'
+
+        raise SelectorError(
+            page='chapter_vip', field='vip_image', selector='#vipImage',
+            url=self.url, description='Cannot find VIP image URL or chapter IDs',
+        )
+
+    def get_chapter_content(self) -> tuple[str, str]:
+        soup = self._soup()
+
+        title_tag = self.sel.find(soup, 'chapter_vip', 'title', url=self.url, required=False)
+        title = title_tag.get_text().strip() if title_tag else '未知章节'
+        self.title = title
+
+        other_info_tags = self.sel.find_all(soup, 'chapter_vip', 'meta_info', url=self.url, required=False)
+        other_info = '\t'.join(tag.get_text() for tag in other_info_tags) if other_info_tags else ''
+
+        img_url = self._build_image_url(soup)
+        logger.info(f'VIP chapter image: {img_url}')
+
+        content_md = f'### {title}\n\n{other_info}\n\n[VIP内容 - 需要OCR]({img_url})\n\n'
+        content_html = f'<div class="ch"><h3>{title}</h3><p>{other_info}</p><img src="{img_url}"></div>'
+        return content_md, content_html
 
 
 class Chapter(PCChapter):
 
-    def get_chapter_content(self) -> tuple[str]:
-        if 'book' in self.url:
-            chapter = PCChapter(self.url)
-        else:
-            chapter = MobileChapter(self.url)
+    def get_chapter_content(self) -> tuple[str, str]:
+        if 'book' not in self.url:
+            chapter = MobileChapter(self.url, self.fetcher, self.sel)
+            content = chapter.get_chapter_content()
+            self.title = chapter.title
+            return content
+
+        soup = self._soup()
+        vip_ch = VIPChapter(self.url, self.fetcher, self.sel)
+        if vip_ch._is_vip(soup):
+            logger.info(f'VIP chapter detected: {self.url}')
+            content = vip_ch.get_chapter_content()
+            self.title = vip_ch.title
+            return content
+
+        chapter = PCChapter(self.url, self.fetcher, self.sel)
         content = chapter.get_chapter_content()
         self.title = chapter.title
         return content
 
 
-
-
 if __name__ == '__main__':
-    url = 'https://m.sfacg.com/c/9200838/'
-    # url = 'http://m.sfacg.com/c/1888100'
-    # url = 'https://book.sfacg.com/Novel/538652/727403/6832391/'
-    # url = 'https://book.sfacg.com/Novel/538652/716897/6348396/'
-
+    url = f'{MOBILE_BASE}/c/9200838/'
     chapter = Chapter(url=url)
     text = chapter.get_chapter_content()
-    # print(text)
     chapter.download(file_type='html')

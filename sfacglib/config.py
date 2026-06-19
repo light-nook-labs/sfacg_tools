@@ -1,0 +1,49 @@
+from pathlib import Path
+
+PACKAGE_DIR = Path(__file__).parent
+PROJECT_DIR = PACKAGE_DIR.parent
+
+MOBILE_BASE = 'https://m.sfacg.com'
+PC_BASE = 'https://book.sfacg.com'
+COMIC_BASE = 'https://mm.sfacg.com'
+PASSPORT_BASE = 'https://passport.sfacg.com'
+
+API_HTML5 = f'{MOBILE_BASE}/API/HTML5.ashx'
+API_COMIC_PICS = f'{COMIC_BASE}/ajax/Common.ashx'
+API_VIP_IMAGE = f'{PC_BASE}/ajax/ashx/common.ashx'
+
+URL_NOVEL_INDEX = f'{MOBILE_BASE}/b/'
+URL_NOVEL_MENU = f'{MOBILE_BASE}/i/'
+URL_REVIEW_LIST = f'{MOBILE_BASE}/cmt/l/list/'
+URL_REVIEW_DETAIL = f'{MOBILE_BASE}/cmt/l/'
+URL_AUDIO = f'{MOBILE_BASE}/ai/'
+URL_LOGIN_PC = f'{PASSPORT_BASE}/Login.aspx'
+URL_LOGIN_API_PC = f'{PASSPORT_BASE}/Ajax/QuickLogin.ashx'
+URL_LOGIN_API_MOB = f'{PASSPORT_BASE}/Ajax/QuickLoginCross.ashx'
+URL_CHECK_AUTH = f'{MOBILE_BASE}/'
+
+SELECTORS_PATH: Path = PACKAGE_DIR / 'selectors.json'
+COOKIE_PATH: Path = PACKAGE_DIR / '.cookies.json'
+AUDIOBOOKS_JSON: Path = PACKAGE_DIR / 'audiobooks.json'
+
+DEFAULT_DELAY: float = 0.05
+MAX_RETRIES: int = 3
+TIMEOUT: tuple[int, int] = (15, 30)
+
+WORKERS_CHAPTER: int = 50
+WORKERS_IMAGE: int = 20
+WORKERS_AUDIO_CHAPTER: int = 20
+WORKERS_AUDIO_VOLUME: int = 5
+WORKERS_EPUB_IMG: int = 10
+
+__all__ = [
+    'PACKAGE_DIR', 'PROJECT_DIR',
+    'MOBILE_BASE', 'PC_BASE', 'COMIC_BASE', 'PASSPORT_BASE',
+    'API_HTML5', 'API_COMIC_PICS', 'API_VIP_IMAGE',
+    'URL_NOVEL_INDEX', 'URL_NOVEL_MENU', 'URL_REVIEW_LIST', 'URL_REVIEW_DETAIL',
+    'URL_AUDIO', 'URL_LOGIN_PC', 'URL_LOGIN_API_PC', 'URL_LOGIN_API_MOB', 'URL_CHECK_AUTH',
+    'SELECTORS_PATH', 'COOKIE_PATH', 'AUDIOBOOKS_JSON',
+    'DEFAULT_DELAY', 'MAX_RETRIES', 'TIMEOUT',
+    'WORKERS_CHAPTER', 'WORKERS_IMAGE', 'WORKERS_AUDIO_CHAPTER',
+    'WORKERS_AUDIO_VOLUME', 'WORKERS_EPUB_IMG',
+]
