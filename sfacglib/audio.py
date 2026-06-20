@@ -61,7 +61,8 @@ class AudioVolume:
             return volume_dict
         for a_tag in self.tag.find_all('a'):
             href = a_tag.get('href', '')
-            title = a_tag.li.string if a_tag.li else ''
+            li = a_tag.li
+            title = li.get_text(strip=True) if li else ''
             if href and title:
                 volume_dict[href] = title
         return {href: f'{i:03}-{text}' for i, (href, text) in enumerate(volume_dict.items(), start=1)}

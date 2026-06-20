@@ -146,6 +146,15 @@ sfacglib/audiobooks.json
 # Downloaded content
 *.epub
 *.mp3
+output/
+
+# Test artifacts
+vip_test_frames/
+vip_test_ocr/
+common.gif
+
+# opencode config
+opencode.json
 
 # Environments
 .env

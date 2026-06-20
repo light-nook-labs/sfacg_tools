@@ -8,18 +8,32 @@ from .fetcher import Fetcher
 from .selectors import Selectors
 from .ch import Chapter
 from .epub import download_epub
-from .config import URL_NOVEL_INDEX, URL_NOVEL_MENU, MOBILE_BASE, WORKERS_CHAPTER
+from .config import URL_NOVEL_INDEX, URL_NOVEL_MENU, MOBILE_BASE, PC_BASE, WORKERS_CHAPTER
 from .progress import ProgressTracker, _extract_id
 from .utils import parse_volume_ul, mobile_url
+from .vip import VipMode
 
 
 class Volume:
 
-    def __init__(self, vol_tag: Tag, fetcher: Fetcher | None = None, selectors: Selectors | None = None):
+    def __init__(
+        self,
+        vol_tag: Tag,
+        fetcher: Fetcher | None = None,
+        selectors: Selectors | None = None,
+        vip_mode: VipMode = VipMode.OCR,
+        llm_api_key: str = '',
+        llm_base_url: str = '',
+        llm_model: str = '',
+    ):
         self.title: str = vol_tag.string or '未命名卷'
         self.vol_tag: Tag | None = parse_volume_ul(vol_tag)
         self.fetcher = fetcher or Fetcher()
         self.sel = selectors or Selectors()
+        self.vip_mode = vip_mode
+        self.llm_api_key = llm_api_key
+        self.llm_base_url = llm_base_url
+        self.llm_model = llm_model
 
     def __repr__(self):
         return f'<Volume({self.title})>'
@@ -30,7 +44,13 @@ class Volume:
         futures = []
         with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
             for _, chapter_url in chapter_dict.items():
-                chapter = Chapter(chapter_url, self.fetcher, self.sel)
+                chapter = Chapter(
+                    chapter_url, self.fetcher, self.sel,
+                    vip_mode=self.vip_mode,
+                    llm_api_key=self.llm_api_key,
+                    llm_base_url=self.llm_base_url,
+                    llm_model=self.llm_model,
+                )
                 futures.append(executor.submit(chapter.get_chapter_content))
 
             for future in tqdm(as_completed(futures), total=len(futures), desc=self.title, leave=False):
@@ -67,7 +87,16 @@ class Volume:
 
 class Novel:
 
-    def __init__(self, nid: int, fetcher: Fetcher | None = None, selectors: Selectors | None = None):
+    def __init__(
+        self,
+        nid: int,
+        fetcher: Fetcher | None = None,
+        selectors: Selectors | None = None,
+        vip_mode: VipMode = VipMode.OCR,
+        llm_api_key: str = '',
+        llm_base_url: str = '',
+        llm_model: str = '',
+    ):
         self.nid = str(nid)
         self.title: str = ''
         self.author: str = ''
@@ -75,6 +104,11 @@ class Novel:
         self.cover: str = ''
         self.fetcher = fetcher or Fetcher()
         self.sel = selectors or Selectors()
+        self.vip_mode = vip_mode
+        self._pc_soup = None
+        self.llm_api_key = llm_api_key
+        self.llm_base_url = llm_base_url
+        self.llm_model = llm_model
 
     def get_novel_info(self) -> tuple[str, str]:
         index_url = f'{URL_NOVEL_INDEX}{self.nid}'
@@ -159,25 +193,61 @@ class Novel:
         return info_md, info_html
 
     def _get_volume_tags(self) -> list[Tag]:
+        pc_url = f'{PC_BASE}/Novel/{self.nid}/MainIndex/'
+        html = self.fetcher.get_html(pc_url)
+        soup = BeautifulSoup(html, 'html.parser')
+
+        catalog_hds = soup.select('.catalog-hd')
+        if catalog_hds:
+            self._pc_soup = soup
+            return catalog_hds
+
         menu_url = f'{URL_NOVEL_MENU}{self.nid}'
         html = self.fetcher.get_html(menu_url)
         soup = BeautifulSoup(html, 'html.parser')
         volume_tags = self.sel.find_all(soup, 'novel_menu', 'volume_tags', url=menu_url, required=False)
         if not volume_tags:
             volume_tags = soup.find_all(class_='mulu')
+        self._pc_soup = None
         return volume_tags
 
     def _collect_chapters(self) -> list[tuple[str, str, str]]:
         volume_tags = self._get_volume_tags()
         chapters: list[tuple[str, str, str]] = []
-        for vol_tag in volume_tags:
-            vol_title = vol_tag.string or '未命名卷'
-            ul_tag = parse_volume_ul(vol_tag)
-            if ul_tag:
-                for a in ul_tag.find_all('a'):
-                    href = a.get('href', '')
-                    if href:
-                        chapters.append((vol_title, a.get_text(), mobile_url(href)))
+
+        if self._pc_soup:
+            for hd in volume_tags:
+                vol_title_tag = hd.select_one('.catalog-title')
+                vol_title = vol_title_tag.get_text().strip() if vol_title_tag else '未命名卷'
+                for sib in hd.next_siblings:
+                    if not hasattr(sib, 'name') or not sib.name:
+                        continue
+                    if 'catalog-hd' in str(sib.get('class', '')):
+                        break
+                    if 'catalog-list' in str(sib.get('class', '')):
+                        for a in sib.select('a[href]'):
+                            href = a.get('href', '')
+                            if not href:
+                                continue
+                            is_vip = a.select_one('.icn_vip') is not None
+                            title = a.get('title', '') or a.get_text().replace('VIP', '').strip()
+                            if is_vip and '/vip/' in href:
+                                url = f'{PC_BASE}{href}'
+                            elif href.startswith('/'):
+                                url = f'{PC_BASE}{href}'
+                            else:
+                                url = mobile_url(href)
+                            chapters.append((vol_title, title, url))
+        else:
+            for vol_tag in volume_tags:
+                vol_title = vol_tag.string or '未命名卷'
+                ul_tag = parse_volume_ul(vol_tag)
+                if ul_tag:
+                    for a in ul_tag.find_all('a'):
+                        href = a.get('href', '')
+                        if href:
+                            chapters.append((vol_title, a.get_text(), mobile_url(href)))
+
         return chapters
 
     def get_novel_content(self, tracker: ProgressTracker | None = None) -> tuple[str, str]:
@@ -200,7 +270,13 @@ class Novel:
             for vol_title, ch_title, ch_url in all_chapters:
                 ch_cid = _extract_id(ch_url)
                 if ch_cid in pending_cids or not pending_cids:
-                    ch = Chapter(ch_url, self.fetcher, self.sel)
+                    ch = Chapter(
+                        ch_url, self.fetcher, self.sel,
+                        vip_mode=self.vip_mode,
+                        llm_api_key=self.llm_api_key,
+                        llm_base_url=self.llm_base_url,
+                        llm_model=self.llm_model,
+                    )
                     futures[executor.submit(ch.get_chapter_content)] = (vol_title, ch_title, ch_url)
 
             for future in tqdm(as_completed(futures), total=len(futures), desc='Chapters', initial=done_count):

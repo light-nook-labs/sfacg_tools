@@ -104,8 +104,21 @@ def cmd_cleanup(args):
 
 
 def cmd_app(args):
-    import app
-    app.main()
+    import flet as ft
+    from app import main
+    ft.run(main)
+
+
+def cmd_ocr(args):
+    from sfacglib.ocr import ocr_image
+    text = ocr_image(args.source, workers=args.workers)
+    if args.output:
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding='utf-8')
+        logger.bind(force=True).info(f'Done: {out}')
+    else:
+        print(text)
 
 
 def main():
@@ -152,6 +165,12 @@ def main():
 
     p_app = sub.add_parser('app', help='Launch GUI')
     p_app.set_defaults(func=cmd_app)
+
+    p_ocr = sub.add_parser('ocr', help='OCR image to text')
+    p_ocr.add_argument('source', help='Image URL or local path')
+    p_ocr.add_argument('--output', '-o', help='Output file path')
+    p_ocr.add_argument('--workers', type=int, default=4, help='OCR threads')
+    p_ocr.set_defaults(func=cmd_ocr)
 
     args = parser.parse_args()
     if not args.command:

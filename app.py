@@ -305,7 +305,8 @@ def main(page: ft.Page):
             return chapters
 
         def parse_markdown(file_path: str) -> list[dict]:
-            text = open(file_path, 'r', encoding='utf-8').read()
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
             chapters = []
             current_title = ''
             current_lines = []
@@ -323,7 +324,8 @@ def main(page: ft.Page):
 
         def parse_html(file_path: str) -> list[dict]:
             from bs4 import BeautifulSoup
-            html = open(file_path, 'r', encoding='utf-8').read()
+            with open(file_path, 'r', encoding='utf-8') as f:
+                html = f.read()
             soup = BeautifulSoup(html, 'html.parser')
             chapters = []
             for ch_div in soup.find_all(class_='ch'):

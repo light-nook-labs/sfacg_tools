@@ -84,6 +84,7 @@ class Auth:
         if not self._cookies:
             return False
 
+        original_cookies = dict(session.cookies)
         for name, value in self._cookies.items():
             session.cookies.set(name, value, domain='.sfacg.com')
 
@@ -98,9 +99,15 @@ class Auth:
                 logger.info('Session cookies are valid')
                 return True
             logger.info('Session cookies expired')
+            session.cookies.clear()
+            for name, value in original_cookies.items():
+                session.cookies.set(name, value)
             return False
         except Exception as e:
             logger.warning(f'Cookie validation failed: {e}')
+            session.cookies.clear()
+            for name, value in original_cookies.items():
+                session.cookies.set(name, value)
             return False
 
     def apply(self, session: requests.Session):

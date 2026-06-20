@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from loguru import logger
 from .fetcher import Fetcher
 from .selectors import Selectors
-from .config import COMIC_BASE, API_COMIC_PICS, WORKERS_IMAGE
+from .config import COMIC_BASE, API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE, WORKERS_IMAGE
 from .utils import sanitize_filename
 
 
@@ -37,34 +37,82 @@ class ComicChapter:
                         args.append(match.group(1).strip('"'))
         return args
 
-    def get_image_urls(self) -> list[str]:
+    def _is_vip(self) -> bool:
+        """Detect if this comic chapter requires VIP access."""
+        html = self.fetcher.get_html(self.url)
+        soup = BeautifulSoup(html, 'html.parser')
+
+        for script in soup.find_all('script'):
+            txt = script.string or ''
+            if 'isVip' in txt and 'true' in txt:
+                return True
+
+        body_text = soup.get_text()
+        vip_keywords = ['VIP章节', '开通VIP', '购买章节', '登录后可查看全文']
+        for kw in vip_keywords:
+            if kw in body_text:
+                return True
+
+        return False
+
+    def get_image_urls(self, use_vip_api: bool = False) -> list[str]:
         args = self._get_args()
         if len(args) < 3:
             logger.error(f'Failed to extract comic args from {self.url}')
             return []
         comic_id, nv, chapter_id = args[0], args[1], args[2]
-        params = {
-            'op': 'getPics',
-            'cid': int(comic_id),
-            'chapId': int(chapter_id),
-            'serial': 'ZP',
-            'path': nv,
-            '_': int(time() * 1000),
+
+        api_url = API_COMIC_VIP if use_vip_api else self.common_url
+        try:
+            params = {
+                'op': 'getPics',
+                'cid': int(comic_id),
+                'chapId': int(chapter_id),
+                'serial': 'ZP',
+                'path': nv,
+                '_': int(time() * 1000),
+            }
+        except ValueError:
+            logger.error(f'Invalid comic/chapter ID: {comic_id}, {chapter_id}')
+            return []
+
+        headers = {
+            'Referer': f'{COMIC_READER_BASE}/',
         }
-        data = self.fetcher.get_json(self.common_url, params=params)
+
+        try:
+            resp = self.fetcher.get(api_url, params=params, headers=headers)
+            data = resp.json()
+        except Exception as e:
+            logger.error(f'Failed to get comic images: {e}')
+            if not use_vip_api:
+                logger.info('Retrying with VIP API endpoint...')
+                return self.get_image_urls(use_vip_api=True)
+            return []
+
         if isinstance(data, dict):
-            return data.get('data', [])
+            urls = data.get('data', [])
+            if not urls and not use_vip_api:
+                logger.info('Empty result, retrying with VIP API endpoint...')
+                return self.get_image_urls(use_vip_api=True)
+            return urls
         return []
 
     def _download_image(self, idx: int, url: str, path: Path):
-        content = self.fetcher.get_binary(url)
-        (path / f'{idx:03}.jpg').write_bytes(content)
+        headers = {'Referer': f'{COMIC_READER_BASE}/'}
+        resp = self.fetcher.get(url, headers=headers)
+        (path / f'{idx:03}.jpg').write_bytes(resp.content)
         logger.debug(f'page {idx} downloaded')
 
     def download(self, path: str | Path = './images/') -> None:
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
-        urls = self.get_image_urls()
+
+        use_vip = self._is_vip()
+        if use_vip:
+            logger.info(f'VIP comic chapter detected: {self.title}')
+
+        urls = self.get_image_urls(use_vip_api=use_vip)
         if not urls:
             logger.warning(f'No images found for {self.title}')
             return

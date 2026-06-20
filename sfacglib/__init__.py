@@ -13,13 +13,14 @@ def _tqdm_sink(message):
 _logger.add(_tqdm_sink, format='{time:HH:mm:ss} | {level: <8} | {message}')
 
 from .config import (
-    MOBILE_BASE, PC_BASE, COMIC_BASE, PASSPORT_BASE,
-    API_HTML5, API_COMIC_PICS, API_VIP_IMAGE,
+    MOBILE_BASE, PC_BASE, COMIC_BASE, COMIC_READER_BASE, PASSPORT_BASE,
+    API_HTML5, API_COMIC_PICS, API_VIP_IMAGE, API_COMIC_VIP,
     URL_NOVEL_INDEX, URL_NOVEL_MENU, URL_REVIEW_LIST, URL_REVIEW_DETAIL,
     URL_AUDIO, SELECTORS_PATH, COOKIE_PATH, AUDIOBOOKS_JSON,
     DEFAULT_DELAY, MAX_RETRIES, TIMEOUT,
     WORKERS_CHAPTER, WORKERS_IMAGE, WORKERS_AUDIO_CHAPTER,
     WORKERS_AUDIO_VOLUME, WORKERS_EPUB_IMG,
+    VIP_IMAGE_WIDTH, OCR_STRIP_HEIGHT, OCR_WORKERS, OCR_BRIGHTNESS_THRESHOLD,
 )
 from .fetcher import Fetcher
 from .auth import Auth
@@ -31,6 +32,8 @@ from .audio import Audio, AudioChapter, AudioVolume
 from .epub import download_epub
 from .progress import ProgressTracker
 from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks
+from .vip import VipMode, process_vip_chapter
+from .ocr import ocr_image, ocr_bytes, ocr_gif
 
 __all__ = [
     'Fetcher', 'Auth',
@@ -42,4 +45,7 @@ __all__ = [
     'download_epub',
     'ProgressTracker',
     'sanitize_filename', 'mobile_url', 'parse_volume_ul', 'run_tasks',
+    'VipMode', 'process_vip_chapter',
+    'ocr_image', 'ocr_bytes', 'ocr_gif',
+    'VIP_IMAGE_WIDTH', 'OCR_STRIP_HEIGHT', 'OCR_WORKERS', 'OCR_BRIGHTNESS_THRESHOLD',
 ]

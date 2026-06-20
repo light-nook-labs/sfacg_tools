@@ -40,14 +40,37 @@
   "novel_menu": {
     "volume_tags": {
       "selector": ".mulu",
-      "description": "Volume section headers on menu page"
+      "description": "Volume section headers on mobile menu page"
     },
     "volume_title": {
       "description": "Volume title (the tag's string content, no selector needed)"
     },
     "chapter_links": {
       "selector": "ul a",
-      "description": "Chapter links within a volume"
+      "description": "Chapter links within a volume (mobile)"
+    },
+    "vip_badge": {
+      "selector": ".icn_vip",
+      "description": "VIP badge span inside chapter link"
+    }
+  },
+
+  "novel_pc_index": {
+    "volume_headers": {
+      "selector": ".catalog-hd",
+      "description": "Volume header containers on PC index page"
+    },
+    "volume_title": {
+      "selector": ".catalog-title",
+      "description": "Volume title text"
+    },
+    "chapter_list": {
+      "selector": ".catalog-list",
+      "description": "Chapter list divs after volume header"
+    },
+    "vip_badge": {
+      "selector": ".icn_vip",
+      "description": "VIP badge span indicating paid chapter"
     }
   },
 

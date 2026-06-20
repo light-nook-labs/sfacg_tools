@@ -3,14 +3,21 @@ name = "sfacg"
 version = "1.0.0"
 description = "SF轻小说多内容下载器 - 小说/漫画/有声/评论"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "beautifulsoup4>=4.15.0",
     "ebooklib>=0.20",
     "flet>=0.25.0",
     "loguru>=0.7.3",
+    "Pillow>=10.0.0",
     "requests>=2.34.2",
     "tqdm>=4.67.0",
+]
+
+[project.optional-dependencies]
+ocr = [
+    "rapidocr_onnxruntime>=1.3.0",
+    "numpy>=1.24.0",
 ]
 
 [project.scripts]

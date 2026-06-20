@@ -5,11 +5,11 @@ from loguru import logger
 from abc import ABC, abstractmethod
 from .fetcher import Fetcher
 from .selectors import Selectors, SelectorError
-from .config import API_VIP_IMAGE, PC_BASE, MOBILE_BASE
+from .config import API_VIP_IMAGE, PC_BASE, MOBILE_BASE, VIP_IMAGE_WIDTH
+from .vip import VipMode, process_vip_chapter
 
 
 class Ch(ABC):
-    """小说章节抽象类"""
 
     def __init__(self, url: str = '', fetcher: Fetcher | None = None, selectors: Selectors | None = None):
         self.url = url
@@ -36,7 +36,6 @@ class Ch(ABC):
             self._download(parent_dir, file_type)
 
     def _parse_children(self, container: Tag) -> str:
-        """Parse chapter content children into markdown. Shared by mobile and PC."""
         md = ''
         for child in container.children:
             if isinstance(child, NavigableString):
@@ -59,7 +58,6 @@ class Ch(ABC):
 
 
 class MobileChapter(Ch):
-    """处理移动端章节"""
 
     def get_chapter_content(self) -> tuple[str, str]:
         soup = self._soup()
@@ -85,7 +83,6 @@ class MobileChapter(Ch):
 
 
 class PCChapter(Ch):
-    """处理PC端章节"""
 
     def get_chapter_content(self) -> tuple[str, str]:
         soup = self._soup()
@@ -113,9 +110,26 @@ class PCChapter(Ch):
 
 
 class VIPChapter(Ch):
-    """处理VIP章节（内容为GIF图片，需OCR提取文字）"""
 
     IMAGE_API_BASE = API_VIP_IMAGE
+
+    def __init__(
+        self,
+        url: str = '',
+        fetcher: Fetcher | None = None,
+        selectors: Selectors | None = None,
+        vip_mode: VipMode = VipMode.OCR,
+        save_frames_dir: Path | None = None,
+        llm_api_key: str = '',
+        llm_base_url: str = '',
+        llm_model: str = '',
+    ):
+        super().__init__(url, fetcher, selectors)
+        self.vip_mode = vip_mode
+        self.save_frames_dir = save_frames_dir
+        self.llm_api_key = llm_api_key
+        self.llm_base_url = llm_base_url
+        self.llm_model = llm_model
 
     def _is_vip(self, soup: BeautifulSoup) -> bool:
         if soup.select_one('#vipImage'):
@@ -166,7 +180,7 @@ class VIPChapter(Ch):
 
         novel_id, chapter_id = self._extract_chapter_ids(soup)
         if novel_id and chapter_id:
-            return f'{self.IMAGE_API_BASE}?op=getChapPic&tp=true&quick=true&cid={chapter_id}&nid={novel_id}&font=16&lang=&w=728'
+            return f'{self.IMAGE_API_BASE}?op=getChapPic&tp=true&quick=true&cid={chapter_id}&nid={novel_id}&font=16&lang=&w={VIP_IMAGE_WIDTH}'
 
         raise SelectorError(
             page='chapter_vip', field='vip_image', selector='#vipImage',
@@ -184,14 +198,55 @@ class VIPChapter(Ch):
         other_info = '\t'.join(tag.get_text() for tag in other_info_tags) if other_info_tags else ''
 
         img_url = self._build_image_url(soup)
-        logger.info(f'VIP chapter image: {img_url}')
+        logger.info(f'VIP chapter [{self.vip_mode.value}]: {img_url}')
 
-        content_md = f'### {title}\n\n{other_info}\n\n[VIP内容 - 需要OCR]({img_url})\n\n'
-        content_html = f'<div class="ch"><h3>{title}</h3><p>{other_info}</p><img src="{img_url}"></div>'
+        text, frame_paths = process_vip_chapter(
+            image_url=img_url,
+            mode=self.vip_mode,
+            save_dir=self.save_frames_dir,
+            llm_api_key=self.llm_api_key,
+            llm_base_url=self.llm_base_url,
+            llm_model=self.llm_model,
+            fetcher=self.fetcher,
+        )
+
+        if self.vip_mode == VipMode.RAW:
+            img_tags = ''.join(f'<img src="{p}">' for p in frame_paths)
+            md_imgs = '\n\n'.join(f'![frame_{i}]({p})' for i, p in enumerate(frame_paths))
+            content_md = f'### {title}\n\n{other_info}\n\n{md_imgs}\n\n'
+            content_html = f'<div class="ch"><h3>{title}</h3><p>{other_info}</p>{img_tags}</div>'
+        elif text:
+            content_md = f'### {title}\n\n{other_info}\n\n{text}\n\n'
+            content_html = (
+                f'<div class="ch"><h3>{title}</h3><p>{other_info}</p>'
+                f'<p>{text.replace(chr(10), "<br>")}</p></div>'
+            )
+        else:
+            content_md = f'### {title}\n\n{other_info}\n\n[VIP内容 - 提取失败]({img_url})\n\n'
+            content_html = f'<div class="ch"><h3>{title}</h3><p>{other_info}</p><img src="{img_url}"></div>'
+
         return content_md, content_html
 
 
 class Chapter(PCChapter):
+
+    def __init__(
+        self,
+        url: str = '',
+        fetcher: Fetcher | None = None,
+        selectors: Selectors | None = None,
+        vip_mode: VipMode = VipMode.OCR,
+        save_frames_dir: Path | None = None,
+        llm_api_key: str = '',
+        llm_base_url: str = '',
+        llm_model: str = '',
+    ):
+        super().__init__(url, fetcher, selectors)
+        self.vip_mode = vip_mode
+        self.save_frames_dir = save_frames_dir
+        self.llm_api_key = llm_api_key
+        self.llm_base_url = llm_base_url
+        self.llm_model = llm_model
 
     def get_chapter_content(self) -> tuple[str, str]:
         if 'book' not in self.url:
@@ -201,7 +256,16 @@ class Chapter(PCChapter):
             return content
 
         soup = self._soup()
-        vip_ch = VIPChapter(self.url, self.fetcher, self.sel)
+        vip_ch = VIPChapter(
+            url=self.url,
+            fetcher=self.fetcher,
+            selectors=self.sel,
+            vip_mode=self.vip_mode,
+            save_frames_dir=self.save_frames_dir,
+            llm_api_key=self.llm_api_key,
+            llm_base_url=self.llm_base_url,
+            llm_model=self.llm_model,
+        )
         if vip_ch._is_vip(soup):
             logger.info(f'VIP chapter detected: {self.url}')
             content = vip_ch.get_chapter_content()

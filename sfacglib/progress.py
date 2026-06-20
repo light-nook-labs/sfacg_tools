@@ -52,6 +52,12 @@ class ProgressTracker:
         self.db_path = db_path or DB_PATH
         self.conn = _connect(self.db_path)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def create_task(
         self,
         task_type: str,
