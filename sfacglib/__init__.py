@@ -33,7 +33,13 @@ from .epub import download_epub
 from .progress import ProgressTracker
 from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks
 from .vip import VipMode, process_vip_chapter
-from .ocr import ocr_image, ocr_bytes, ocr_gif
+from .ocr import (
+    ocr_image, ocr_bytes, ocr_gif,
+    prepare_lines_as_images, image_to_bytes,
+    ocr_gif_with_llm, ocr_image_with_llm,
+)
+from .llm_vision import LLMVision, LLMProvider, create_llm_vision
+from .web_llm_vision import WebLLMVision, WebLLMProvider, create_web_llm_vision
 
 __all__ = [
     'Fetcher', 'Auth',
@@ -47,5 +53,9 @@ __all__ = [
     'sanitize_filename', 'mobile_url', 'parse_volume_ul', 'run_tasks',
     'VipMode', 'process_vip_chapter',
     'ocr_image', 'ocr_bytes', 'ocr_gif',
+    'prepare_lines_as_images', 'image_to_bytes',
+    'ocr_gif_with_llm', 'ocr_image_with_llm',
+    'LLMVision', 'LLMProvider', 'create_llm_vision',
+    'WebLLMVision', 'WebLLMProvider', 'create_web_llm_vision',
     'VIP_IMAGE_WIDTH', 'OCR_STRIP_HEIGHT', 'OCR_WORKERS', 'OCR_BRIGHTNESS_THRESHOLD',
 ]

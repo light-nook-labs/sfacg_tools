@@ -19,6 +19,9 @@ ocr = [
     "rapidocr_onnxruntime>=1.3.0",
     "numpy>=1.24.0",
 ]
+web = [
+    "playwright>=1.40.0",
+]
 
 [project.scripts]
 sfacg = "app:main"
