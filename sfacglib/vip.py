@@ -1,10 +1,45 @@
 import tempfile
+import time
+import random
+import threading
 from enum import Enum
 from pathlib import Path
+from io import BytesIO
 from loguru import logger
+from PIL import Image
 
 from .fetcher import Fetcher
 from .config import OCR_WORKERS
+
+_VIP_DELAY_RANGE = (2.0, 5.0)
+_VIP_RETRY_DELAYS = [10, 20, 40]
+
+_vip_lock = threading.Lock()
+_vip_last_request = 0.0
+
+
+def _validate_gif(gif_bytes: bytes, expected_width: int = 0) -> tuple[bool, str]:
+    try:
+        with Image.open(BytesIO(gif_bytes)) as img:
+            if img.format != 'GIF':
+                return False, f'not GIF (format={img.format}, size={img.size})'
+            w, h = img.size
+            if expected_width and w != expected_width:
+                return False, f'width mismatch ({w} != expected {expected_width})'
+            return True, f'{w}x{h}'
+    except Exception as e:
+        return False, f'invalid: {e}'
+
+
+def _vip_rate_limit():
+    global _vip_last_request
+    with _vip_lock:
+        now = time.time()
+        elapsed = now - _vip_last_request
+        delay = random.uniform(*_VIP_DELAY_RANGE)
+        if elapsed < delay:
+            time.sleep(delay - elapsed)
+        _vip_last_request = time.time()
 
 
 class VipMode(Enum):
@@ -12,9 +47,6 @@ class VipMode(Enum):
     OCR = 'ocr'
     RAW = 'raw'
     LLM = 'llm'
-    KIMI = 'kimi'
-    DEEPSEEK = 'deepseek'
-    KIMI_WEB = 'kimi_web'
     DEEPSEEK_WEB = 'deepseek_web'
 
 
@@ -89,9 +121,33 @@ def process_vip_chapter(
         Tuple of (extracted_text, list_of_saved_frame_paths).
     """
     fetcher = fetcher or Fetcher()
-    logger.info(f'Downloading VIP image: {image_url}')
-    resp = fetcher.get(image_url)
-    gif_bytes = resp.content
+
+    from urllib.parse import urlparse, parse_qs
+    parsed = urlparse(image_url)
+    qs = parse_qs(parsed.query)
+    expected_w = int(qs.get('w', [0])[0])
+
+    gif_bytes = b''
+    for attempt in range(1 + len(_VIP_RETRY_DELAYS)):
+        if attempt > 0:
+            delay = _VIP_RETRY_DELAYS[attempt - 1]
+            logger.warning(f'VIP retry {attempt}/{len(_VIP_RETRY_DELAYS)} after {delay}s...')
+            time.sleep(delay)
+
+        _vip_rate_limit()
+        logger.info(f'Downloading VIP image (attempt {attempt + 1}): {image_url}')
+        resp = fetcher.get(image_url)
+        gif_bytes = resp.content
+
+        valid, info = _validate_gif(gif_bytes, expected_w)
+        if valid:
+            logger.info(f'VIP image OK: {info}')
+            break
+        logger.warning(f'VIP image invalid ({info}), retrying...')
+
+    valid, info = _validate_gif(gif_bytes, expected_w)
+    if not valid:
+        raise ValueError(f'VIP图片获取失败: {info} ({image_url})')
 
     if save_dir:
         save_dir = Path(save_dir)
@@ -112,117 +168,13 @@ def process_vip_chapter(
         logger.info(f'Saved {len(frame_paths)} frames to {save_dir}')
         return '', frame_paths
 
-    # Kimi Vision API模式
-    if mode == VipMode.KIMI:
-        from .llm_vision import create_llm_vision
-        logger.info('Running Kimi Vision OCR...')
-        try:
-            kimi = create_llm_vision(provider='kimi', api_key=llm_api_key)
-            # 从gif_bytes创建临时文件
-            with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as tmp:
-                tmp.write(gif_bytes)
-                tmp_path = Path(tmp.name)
-            text = kimi.ocr_and_correct(tmp_path)
-            tmp_path.unlink()  # 删除临时文件
-            
-            if text:
-                logger.info(f'Kimi extracted {len(text)} chars')
-            else:
-                logger.warning('Kimi: No text extracted')
-            
-            frame_paths = []
-            if save_dir:
-                frame_paths = list(save_dir.glob('frame_*.png'))
-            return text, frame_paths
-        except Exception as e:
-            logger.error(f'Kimi Vision failed: {e}')
-            # 回退到普通OCR
-            logger.info('Falling back to standard OCR...')
-            from .ocr import ocr_gif
-            text = ocr_gif(gif_bytes, workers=workers)
-            frame_paths = []
-            if save_dir:
-                frame_paths = list(save_dir.glob('frame_*.png'))
-            return text, frame_paths
-
-    # DeepSeek Vision API模式
-    if mode == VipMode.DEEPSEEK:
-        from .llm_vision import create_llm_vision
-        logger.info('Running DeepSeek Vision OCR...')
-        try:
-            deepseek = create_llm_vision(provider='deepseek', api_key=llm_api_key)
-            # 从gif_bytes创建临时文件
-            with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as tmp:
-                tmp.write(gif_bytes)
-                tmp_path = Path(tmp.name)
-            text = deepseek.ocr_and_correct(tmp_path)
-            tmp_path.unlink()  # 删除临时文件
-            
-            if text:
-                logger.info(f'DeepSeek extracted {len(text)} chars')
-            else:
-                logger.warning('DeepSeek: No text extracted')
-            
-            frame_paths = []
-            if save_dir:
-                frame_paths = list(save_dir.glob('frame_*.png'))
-            return text, frame_paths
-        except Exception as e:
-            logger.error(f'DeepSeek Vision failed: {e}')
-            # 回退到普通OCR
-            logger.info('Falling back to standard OCR...')
-            from .ocr import ocr_gif
-            text = ocr_gif(gif_bytes, workers=workers)
-            frame_paths = []
-            if save_dir:
-                frame_paths = list(save_dir.glob('frame_*.png'))
-            return text, frame_paths
-
-    # Kimi Web模式 (无需API Key)
-    if mode == VipMode.KIMI_WEB:
-        from .web_llm_vision import create_web_llm_vision
-        logger.info('Running Kimi Web OCR (no API key needed)...')
-        try:
-            kimi_web = create_web_llm_vision(provider='kimi', headless=False)
-            # 从gif_bytes创建临时文件
-            with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as tmp:
-                tmp.write(gif_bytes)
-                tmp_path = Path(tmp.name)
-            text = kimi_web.ocr_and_correct(tmp_path)
-            tmp_path.unlink()  # 删除临时文件
-            
-            if text:
-                logger.info(f'Kimi Web extracted {len(text)} chars')
-            else:
-                logger.warning('Kimi Web: No text extracted')
-            
-            frame_paths = []
-            if save_dir:
-                frame_paths = list(save_dir.glob('frame_*.png'))
-            return text, frame_paths
-        except Exception as e:
-            logger.error(f'Kimi Web failed: {e}')
-            # 回退到普通OCR
-            logger.info('Falling back to standard OCR...')
-            from .ocr import ocr_gif
-            text = ocr_gif(gif_bytes, workers=workers)
-            frame_paths = []
-            if save_dir:
-                frame_paths = list(save_dir.glob('frame_*.png'))
-            return text, frame_paths
-
     # DeepSeek Web模式 (无需API Key)
     if mode == VipMode.DEEPSEEK_WEB:
-        from .web_llm_vision import create_web_llm_vision
+        from .web_llm_vision import DeepSeekWebOCR
         logger.info('Running DeepSeek Web OCR (no API key needed)...')
         try:
-            deepseek_web = create_web_llm_vision(provider='deepseek', headless=False)
-            # 从gif_bytes创建临时文件
-            with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as tmp:
-                tmp.write(gif_bytes)
-                tmp_path = Path(tmp.name)
-            text = deepseek_web.ocr_and_correct(tmp_path)
-            tmp_path.unlink()  # 删除临时文件
+            deepseek_web = DeepSeekWebOCR(headless=False)
+            text = deepseek_web.ocr_gif(gif_bytes)
             
             if text:
                 logger.info(f'DeepSeek Web extracted {len(text)} chars')
@@ -235,18 +187,17 @@ def process_vip_chapter(
             return text, frame_paths
         except Exception as e:
             logger.error(f'DeepSeek Web failed: {e}')
-            # 回退到普通OCR
             logger.info('Falling back to standard OCR...')
-            from .ocr import ocr_gif
+            from .ocr_fast import ocr_gif
             text = ocr_gif(gif_bytes, workers=workers)
             frame_paths = []
             if save_dir:
                 frame_paths = list(save_dir.glob('frame_*.png'))
             return text, frame_paths
 
-    # 标准OCR模式
-    from .ocr import ocr_gif
-    logger.info('Running OCR...')
+    # 标准OCR模式（使用优化版）
+    from .ocr_fast import ocr_gif
+    logger.info('Running OCR (fast)...')
     text = ocr_gif(gif_bytes, workers=workers)
 
     # LLM纠正模式

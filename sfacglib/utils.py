@@ -10,7 +10,12 @@ T = TypeVar('T')
 
 
 def sanitize_filename(name: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', '_', name).strip()
+    if not name:
+        return ''
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
+    name = re.sub(r'\s+', '_', name)
+    name = name.strip('_. ')
+    return name[:200] if name else ''
 
 
 def build_url(base: str, path: str) -> str:

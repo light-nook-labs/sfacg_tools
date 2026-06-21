@@ -7,14 +7,17 @@
 ## 功能
 
 - [x] 小说下载（EPUB / MD / HTML / TXT）
-- [x] 漫画下载（按章节）
+- [x] 漫画下载（目录 / HTML / EPUB / PDF）
 - [x] 有声小说下载（MP3）
 - [x] 评论下载（长评 + 回复）
-- [x] 现代 Material Design UI（Flet）
+- [x] 格式转换（漫画目录 → HTML / EPUB / PDF）
+- [x] 三种 UI（PC / Mobile / Web）
 - [x] 多线程并发下载
-- [x] 进度条显示
+- [x] 单进度条显示
 - [x] Cookie 持久化登录
 - [x] CSS 选择器集中管理
+- [x] 流式写入防止数据丢失
+- [x] 目录模式便于断点续传
 
 ## 安装
 
@@ -25,40 +28,212 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # 安装依赖
 uv sync
 
-# 安装 tesseract（OCR，可选）
-sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim
+# 安装 OCR 支持（可选）
+uv sync --extra ocr
+
+# 安装 PDF 导出（可选）
+uv add reportlab
+
+# 安装 EPUB 导出（可选）
+uv add ebooklib
 ```
 
-## 运行
+## 快速开始
+
+### CLI 命令
 
 ```bash
-# 桌面 GUI
-uv run python app.py
+# 下载小说（EPUB）
+uv run python main.py novel 43708 -f epub -o ./output/
 
-# Web 浏览器
-uv run flet run app.py --web
+# 下载小说带评论
+uv run python main.py novel 43708 -f epub -r -o ./output/
 
-# CLI
-uv run python main.py novel 43708 -f epub
-uv run python main.py comic https://mm.sfacg.com/b/ZXNWM/
-uv run python main.py audio 153
-uv run python main.py review https://m.sfacg.com/b/43708/
+# 下载漫画（目录模式）
+uv run python main.py comic https://manhua.sfacg.com/mh/LYZJ/ -o ./output/
+
+# 下载漫画（EPUB）
+uv run python main.py comic https://manhua.sfacg.com/mh/LYZJ/ -f epub -o ./output/
+
+# 下载有声小说
+uv run python main.py audio 153 -o ./output/
+
+# 下载评论
+uv run python main.py review https://m.sfacg.com/b/43708/ -o ./output/
+
+# 转换漫画格式
+uv run python main.py convert output/落樱之剑 -f html,epub,pdf
+
+# OCR 图片
+uv run python main.py ocr <image_url_or_path> -o output.txt
 ```
 
-## 打包
+### GUI
 
 ```bash
-# 桌面可执行文件
-./build.sh desktop
+# PC GUI（CustomTkinter）
+uv run python main.py app
 
-# Android APK（需要 Android SDK）
-./build.sh apk
+# Mobile GUI（Flet/Flutter）
+uv run python main.py mobile --target app
 
-# iOS（需要 macOS + Xcode）
-./build.sh ios
+# Web UI（FastAPI）
+uv run python main.py web
 
-# Web 静态文件
-./build.sh web
+# 打包 APK
+uv run python main.py mobile --target apk
+```
+
+## 详细用法
+
+### 小说下载
+
+```bash
+# 基本用法
+uv run python main.py novel <novel_id> -f <format> -o <output_dir>
+
+# 格式选项
+#   epub  - EPUB 电子书（默认）
+#   md    - Markdown
+#   txt   - 纯文本
+#   html  - HTML
+
+# 示例
+uv run python main.py novel 43708 -f epub -o ./output/
+uv run python main.py novel 43708 -f md -o ./output/
+uv run python main.py novel 43708 -f html -o ./output/
+
+# 带评论下载
+uv run python main.py novel 43708 -f epub -r -o ./output/
+
+# 章节范围
+uv run python main.py novel 43708 -f epub -sc "第一章" -ec "第十章"
+uv run python main.py novel 43708 -f epub -c "1-10,20,30-40"
+
+# 卷过滤
+uv run python main.py novel 43708 -f epub -v "第一卷,第二卷"
+```
+
+### 漫画下载
+
+```bash
+# 基本用法
+uv run python main.py comic <url> -f <format> -o <output_dir>
+
+# 格式选项
+#   dir   - 目录模式（默认）
+#   html  - HTML 文件
+#   epub  - EPUB 电子书
+#   pdf   - PDF 文件
+
+# 示例
+uv run python main.py comic https://manhua.sfacg.com/mh/LYZJ/ -f dir -o ./output/
+uv run python main.py comic https://manhua.sfacg.com/mh/LYZJ/ -f epub -o ./output/
+uv run python main.py comic https://manhua.sfacg.com/mh/LYZJ/ -f pdf -o ./output/
+
+# HTML 使用远程 URL（不下载图片）
+uv run python main.py comic https://manhua.sfacg.com/mh/LYZJ/ -f html --url-mode
+
+# 章节范围
+uv run python main.py comic https://manhua.sfacg.com/mh/LYZJ/ -f epub -sc "第1话" -ec "第10话"
+```
+
+### 格式转换
+
+```bash
+# 转换已下载的漫画目录
+uv run python main.py convert <comic_dir> -f <formats>
+
+# 示例
+uv run python main.py convert output/落樱之剑 -f html,epub,pdf
+
+# PDF 自定义边距
+uv run python main.py convert output/落樱之剑 -f pdf -p 20
+```
+
+### 有声小说下载
+
+```bash
+# 基本用法
+uv run python main.py audio <audio_id> -o <output_dir>
+
+# 示例
+uv run python main.py audio 153 -o ./output/
+
+# 章节范围
+uv run python main.py audio 153 -c "1-10"
+```
+
+## 项目结构
+
+```
+sfacglib/
+  __init__.py         # 包导出
+  base.py             # 抽象基类：Container, Section, Item
+  config.py           # 集中常量（URL、路径、线程数）
+  fetcher.py          # HTTP 请求（轮换 UA、重试、限速、认证）
+  auth.py             # 登录、会话持久化、Cookie 管理
+  selectors.py        # CSS 选择器注册表
+  selectors.json      # 所有 CSS 选择器
+  ch.py               # 章节内容抓取（移动端 + PC + VIP）
+  novel.py            # 小说下载器（NovelVolume, NovelChapter, ReviewComment）
+  comic.py            # 漫画下载器（ComicChapter, ComicPage）
+  audio.py            # 有声下载器（AudioVolume, AudioChapter）
+  epub.py             # EPUB 生成
+  convert.py          # 格式转换（HTML, EPUB, PDF）
+  vip.py              # VIP 章节处理（图片下载、GIF→PNG、OCR）
+  ocr.py              # OCR 引擎（RapidOCR、图像预处理）
+  ocr_fast.py         # 优化本地 OCR（智能去拼音、rec_only 模式、并行识别）
+  llm_vision.py       # LLM Vision API
+  web_llm_vision.py   # 浏览器 LLM Vision
+  nlp.py              # NLP 后处理（合并图片宽度导致的断行）
+  progress.py         # 进度追踪（SQLite）
+  utils.py            # 共享工具
+  audiobooks.json     # 有声书目录缓存
+  ui/
+    __init__.py       # UI 入口
+    pc/
+      __init__.py
+      app.py          # CustomTkinter 主窗口
+      novel_tab.py    # 小说标签页
+      comic_tab.py    # 漫画标签页
+      audio_tab.py    # 有声标签页
+      settings_tab.py # 设置标签页
+    mobile/
+      __init__.py
+      app.py          # Flet 移动端（Flutter）
+    web/
+      __init__.py
+      server.py       # FastAPI Web 服务器
+      templates/
+        index.html    # Web UI 模板
+
+main.py               # 统一 CLI 入口
+buildozer.spec        # Android APK 构建配置
+```
+
+## 三层抽象
+
+所有内容类型遵循三层层次结构：
+
+| 内容 | Container | Section | Item |
+|------|-----------|---------|------|
+| 小说 | Novel | NovelVolume | NovelChapter |
+| 漫画 | Comic | ComicChapter | ComicPage |
+| 有声 | Audio | AudioVolume | AudioChapter |
+| 评论 | Novel | ReviewSection | ReviewComment |
+
+### 目录结构
+
+```
+{title}/
+  catalog.json          # 元数据 + 章节映射
+  info.md               # 内容信息
+  001_{section_title}/  # 卷/章节（带 ID 前缀）
+    001_{item_title}.md # 章节/页面（带 ID 前缀）
+    002_{item_title}.md
+  002_{section_title}/
+    ...
 ```
 
 ## 登录
@@ -69,24 +244,71 @@ SFACG 登录需要验证码，不支持密码登录。请从浏览器导入 Cook
 2. F12 → Network → 刷新页面 → 点任意请求 → 复制 `Cookie` 头的值
 3. 在 App 中粘贴导入
 
-## 项目结构
+### CLI 导入
 
+```bash
+uv run python -c "
+from sfacglib.fetcher import Fetcher
+f = Fetcher()
+f.import_cookies('paste_your_cookie_string_here')
+"
 ```
-sfacglib/          核心库
-  config.py        常量配置
-  fetcher.py       HTTP 请求（轮换 UA、重试、限速）
-  auth.py          登录认证
-  selectors.py     CSS 选择器注册表
-  selectors.json   选择器配置
-  ch.py            章节抓取
-  book.py          小说下载
-  comic.py         漫画下载
-  audio.py         有声下载
-  epub.py          EPUB 生成
-app.py             Flet GUI
-main.py            CLI 入口
-review.py          评论下载
-build.sh           打包脚本
+
+## CSS 选择器
+
+所有 CSS 选择器位于 `sfacglib/selectors.json`。当选择器失效时：
+
+1. 使用 chrome-devtools-mcp 诊断
+2. 更新 `selectors.json`
+3. 无需修改代码
+
+## VIP 章节
+
+VIP 章节在目录解析时通过 `.icn_vip` 标记检测。
+
+**本地 OCR + NLP（推荐，纯 CPU）**：
+```
+GIF 图片 → 帧提取 → 分行 → 智能去拼音 → RapidOCR 识别 → NLP 合并断行
+~57s/GIF，50 字/s，纯 CPU，4 线程
+```
+
+**DeepSeek Web LLM OCR**：
+```
+GIF 图片 → 帧提取 → 分段 → 上传 DeepSeek → 识别文本 → 去空格 → 去重
+~92s/GIF，23.5 字/s，需要浏览器 + 网络
+```
+
+**性能对比（同一 GIF: ch_081）**：
+
+| 方案 | 时间 | 字数 | 准确率 |
+|------|------|------|--------|
+| 本地 OCR | 39.2s | 2020 | 低（乱码） |
+| 本地 OCR + LLM 纠正 | 66.4s | 2074 | 高 |
+| DeepSeek Web LLM | 91.7s | 2153 | 近 100%（少量幻觉） |
+
+## 并发模型
+
+- 章节级：`ThreadPoolExecutor(max_workers=8)` 并发下载多章
+- 页面级：每章内部 `ThreadPoolExecutor(max_workers=8)` 并发下载多页
+- 进度条：单 `tqdm` + `threading.Lock` 线程安全更新
+
+## 流式写入
+
+所有格式默认目录模式，每章独立文件：
+
+- `txt/md` → 单文件流式写入
+- `html` → 目录模式（每章独立 HTML）
+- `epub` → 从目录转换
+- `pdf` → 从目录转换
+
+## 打包
+
+```bash
+# Android APK
+uv run python main.py mobile --target apk
+
+# 桌面可执行文件
+./build.sh desktop
 ```
 
 ## License

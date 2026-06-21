@@ -1,3 +1,4 @@
+import re
 from ebooklib import epub
 from ebooklib.epub import EpubHtml
 from bs4 import BeautifulSoup, Tag
@@ -63,6 +64,70 @@ def _process_images(
             content=results[url],
         ))
         img['src'] = f'images/{fname}.{ext}'
+
+
+def _md_to_html(md_text: str) -> str:
+    lines = md_text.split('\n')
+    html_lines = []
+    in_list = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_list:
+                html_lines.append('</ul>')
+                in_list = False
+            html_lines.append('')
+            continue
+
+        if stripped.startswith('#### '):
+            if in_list:
+                html_lines.append('</ul>')
+                in_list = False
+            html_lines.append(f'<h4>{stripped[5:]}</h4>')
+        elif stripped.startswith('### '):
+            if in_list:
+                html_lines.append('</ul>')
+                in_list = False
+            html_lines.append(f'<h3>{stripped[4:]}</h3>')
+        elif stripped.startswith('## '):
+            if in_list:
+                html_lines.append('</ul>')
+                in_list = False
+            html_lines.append(f'<h2>{stripped[3:]}</h2>')
+        elif stripped.startswith('# '):
+            if in_list:
+                html_lines.append('</ul>')
+                in_list = False
+            html_lines.append(f'<h1>{stripped[2:]}</h1>')
+        elif stripped.startswith('- ') or stripped.startswith('* '):
+            if not in_list:
+                html_lines.append('<ul>')
+                in_list = True
+            html_lines.append(f'<li>{stripped[2:]}</li>')
+        elif stripped.startswith('![', 0) and '](' in stripped and stripped.endswith(')'):
+            if in_list:
+                html_lines.append('</ul>')
+                in_list = False
+            match = re.match(r'!\[([^\]]*)\]\(([^)]+)\)', stripped)
+            if match:
+                alt, src = match.groups()
+                html_lines.append(f'<img src="{src}" alt="{alt}">')
+        elif stripped == '---' or stripped == '***':
+            if in_list:
+                html_lines.append('</ul>')
+                in_list = False
+            html_lines.append('<hr>')
+        else:
+            if in_list:
+                html_lines.append('</ul>')
+                in_list = False
+            html_lines.append(f'<p>{stripped}</p>')
+
+    if in_list:
+        html_lines.append('</ul>')
+
+    return '\n'.join(html_lines)
 
 
 def download_epub(
@@ -159,3 +224,115 @@ def download_epub(
         logger.bind(force=True).info(f'电子书生成成功: {epub_path}')
     except Exception as e:
         logger.error(f'生成电子书失败: {e}')
+
+
+def convert_md_to_epub(
+    md_content: str,
+    title: str,
+    author: str,
+    desc: str,
+    cover: str,
+    path: str | Path = './',
+    fetcher: Fetcher | None = None,
+) -> None:
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    fetcher = fetcher or Fetcher()
+
+    book = epub.EpubBook()
+    book.set_identifier(str(uuid4()))
+    book.set_title(title)
+    book.set_language('zh')
+    book.add_author(author)
+    book.add_metadata('DC', 'description', desc)
+
+    try:
+        book.set_cover('cover.jpg', fetcher.get_binary(cover))
+    except Exception as e:
+        logger.warning(f'封面下载失败: {e}')
+
+    spine: list[str | EpubHtml] = ['nav']
+    toc: list = []
+
+    vol_pattern = re.compile(r'^## (.+)$', re.MULTILINE)
+    ch_pattern = re.compile(r'^### (.+)$', re.MULTILINE)
+
+    parts = vol_pattern.split(md_content)
+
+    info_html = _md_to_html(parts[0])
+    if info_html.strip():
+        page = epub.EpubHtml(
+            title='小说信息',
+            file_name=f'intro_{str(uuid4())[:8]}.xhtml',
+            lang='zh',
+            content=f'<div class="vol">{info_html}</div>',
+        )
+        book.add_item(page)
+        spine.append(page)
+        toc.append(page)
+
+    vol_sections = []
+    i = 1
+    while i < len(parts):
+        vol_title = parts[i].strip()
+        vol_content = parts[i + 1] if i + 1 < len(parts) else ''
+
+        ch_parts = ch_pattern.split(vol_content)
+
+        vol_page = epub.EpubHtml(
+            title=vol_title,
+            file_name=f'vol_{str(uuid4())[:8]}.xhtml',
+            lang='zh',
+            content=f'<h2>{vol_title}</h2>',
+        )
+        book.add_item(vol_page)
+        spine.append(vol_page)
+
+        chapters = []
+        j = 1
+        while j < len(ch_parts):
+            ch_title = ch_parts[j].strip()
+            ch_md = ch_parts[j + 1] if j + 1 < len(ch_parts) else ''
+            ch_html = _md_to_html(ch_md)
+
+            ch_page = epub.EpubHtml(
+                title=ch_title,
+                file_name=f'ch_{str(uuid4())[:8]}.xhtml',
+                lang='zh',
+                content=f'<div class="vol"><h2>{vol_title}</h2><div class="ch"><h3>{ch_title}</h3>{ch_html}</div></div>',
+            )
+            chapters.append(ch_page)
+            book.add_item(ch_page)
+            spine.append(ch_page)
+            j += 2
+
+        if chapters:
+            vol_sections.append((epub.Section(vol_title), tuple(chapters)))
+        i += 2
+
+    toc.extend(vol_sections)
+
+    book.toc = tuple(toc)
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.spine = spine
+
+    safe_title = title.replace('/', '_').replace('\\', '_')
+    epub_path = path / f'{safe_title}.epub'
+    try:
+        epub.write_epub(name=str(epub_path), book=book)
+        logger.bind(force=True).info(f'电子书生成成功: {epub_path}')
+    except Exception as e:
+        logger.error(f'生成电子书失败: {e}')
+
+
+def convert_html_to_epub(
+    html: str,
+    title: str,
+    author: str,
+    desc: str,
+    cover: str,
+    path: str | Path = './',
+    fetcher: Fetcher | None = None,
+) -> None:
+    download_epub(html, title, author, desc, cover, path, fetcher)

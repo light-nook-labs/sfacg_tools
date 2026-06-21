@@ -26,10 +26,11 @@ from .fetcher import Fetcher
 from .auth import Auth
 from .selectors import Selectors, SelectorError
 from .ch import Chapter, MobileChapter, PCChapter, VIPChapter
-from .book import Novel, Volume
+from .base import Container, Section, Item
+from .novel import Novel
 from .comic import Comic, ComicChapter
 from .audio import Audio, AudioChapter, AudioVolume
-from .epub import download_epub
+from .epub import download_epub, convert_html_to_epub, convert_md_to_epub
 from .progress import ProgressTracker
 from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks
 from .vip import VipMode, process_vip_chapter
@@ -39,16 +40,17 @@ from .ocr import (
     ocr_gif_with_llm, ocr_image_with_llm,
 )
 from .llm_vision import LLMVision, LLMProvider, create_llm_vision
-from .web_llm_vision import WebLLMVision, WebLLMProvider, create_web_llm_vision
+from .web_llm_vision import DeepSeekWebOCR, split_by_height, resize_to_max, deduplicate_texts, create_web_llm_vision
 
 __all__ = [
     'Fetcher', 'Auth',
     'Selectors', 'SelectorError',
     'Chapter', 'MobileChapter', 'PCChapter', 'VIPChapter',
-    'Novel', 'Volume',
+    'Container', 'Section', 'Item',
+    'Novel',
     'Comic', 'ComicChapter',
     'Audio', 'AudioChapter', 'AudioVolume',
-    'download_epub',
+    'download_epub', 'convert_html_to_epub', 'convert_md_to_epub',
     'ProgressTracker',
     'sanitize_filename', 'mobile_url', 'parse_volume_ul', 'run_tasks',
     'VipMode', 'process_vip_chapter',
@@ -56,6 +58,6 @@ __all__ = [
     'prepare_lines_as_images', 'image_to_bytes',
     'ocr_gif_with_llm', 'ocr_image_with_llm',
     'LLMVision', 'LLMProvider', 'create_llm_vision',
-    'WebLLMVision', 'WebLLMProvider', 'create_web_llm_vision',
+    'DeepSeekWebOCR', 'split_by_height', 'resize_to_max', 'deduplicate_texts',
     'VIP_IMAGE_WIDTH', 'OCR_STRIP_HEIGHT', 'OCR_WORKERS', 'OCR_BRIGHTNESS_THRESHOLD',
 ]

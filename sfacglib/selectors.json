@@ -143,12 +143,12 @@
 
   "comic_info": {
     "container": {
-      "selector": ".book_info",
-      "description": "Comic info container"
+      "selector": ".comic_Serial_list",
+      "description": "Comic chapter list container"
     },
     "title": {
-      "selector": ".book_newtitle",
-      "description": "Comic title"
+      "selector": "title",
+      "description": "Comic title from page title tag"
     },
     "cover": {
       "selector": ".book_info img",
@@ -172,7 +172,7 @@
       "description": "Comic description/synopsis"
     },
     "chapter_list": {
-      "selector": ".comic_main_list a",
+      "selector": ".comic_Serial_list a",
       "description": "Comic chapter links"
     }
   },

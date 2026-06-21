@@ -134,27 +134,6 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Auth cookies
-.cookies.json
-
-# Progress database
-sfacglib/progress.db
-
-# Audiobooks cache
-sfacglib/audiobooks.json
-
-# Downloaded content
-*.epub
-*.mp3
-output/
-
-# Test artifacts
-vip_test_frames/
-vip_test_ocr/
-common.gif
-
-# opencode config
-opencode.json
 
 # Environments
 .env
@@ -227,3 +206,16 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+
+# Auth cookies
+.cookies.json
+
+# Progress database
+sfacglib/progress.db
+
+
+*.gif
+*.png
+output/

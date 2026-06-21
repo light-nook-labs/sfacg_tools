@@ -31,11 +31,20 @@ def _sanitize_filename(name: str) -> str:
 
 
 def cmd_novel(args):
-    from sfacglib.book import Novel
+    from sfacglib.novel import Novel
     f = _get_fetcher()
     tracker = ProgressTracker()
     novel = Novel(args.nid, fetcher=f)
-    novel.download_novel(path=args.output, file_type=args.format, tracker=tracker)
+    novel.download_novel(
+        path=args.output,
+        file_type=args.format,
+        tracker=tracker,
+        start_chapter=args.start_chapter,
+        end_chapter=args.end_chapter,
+        chapter_range=args.chapters,
+        volume_filter=args.volumes,
+        download_reviews=args.reviews,
+    )
     tracker.close()
     logger.bind(force=True).info(f'Done: {novel.title}')
 
@@ -56,24 +65,60 @@ def cmd_chapter(args):
 def cmd_comic(args):
     from sfacglib.comic import Comic
     f = _get_fetcher()
+    tracker = ProgressTracker()
     comic = Comic(args.url, fetcher=f)
-    comic.download(path=args.output)
+    comic.download(
+        path=args.output,
+        file_type=args.format,
+        local_images=not args.url_mode,
+        tracker=tracker,
+        start_chapter=args.start_chapter,
+        end_chapter=args.end_chapter,
+        chapter_range=args.chapters,
+    )
+    tracker.close()
     logger.bind(force=True).info(f'Done: {comic.title}')
+
+
+def cmd_convert(args):
+    from sfacglib.convert import convert_comic
+    f = _get_fetcher()
+    formats = args.formats.split(',') if args.formats else ['html', 'epub', 'pdf']
+    convert_comic(args.dir, formats=formats, fetcher=f, padding=args.padding)
 
 
 def cmd_audio(args):
     from sfacglib.audio import Audio
     f = _get_fetcher()
+    tracker = ProgressTracker()
     audio = Audio(args.id, fetcher=f)
-    audio.download(path=args.output)
+    audio.download(
+        path=args.output,
+        tracker=tracker,
+        start_chapter=args.start_chapter,
+        end_chapter=args.end_chapter,
+        chapter_range=args.chapters,
+        volume_filter=args.volumes,
+    )
+    tracker.close()
     logger.bind(force=True).info(f'Done: {audio.title}')
 
 
 def cmd_review(args):
-    import review as review_mod
+    from sfacglib.novel import Novel
     f = _get_fetcher()
-    reviews = review_mod.BookReviews(args.url, save_dir=args.output, fetcher=f)
-    reviews.download_reviews()
+    import re
+    nid_match = re.search(r'(\d+)', args.url)
+    if not nid_match:
+        logger.error('无法提取小说ID')
+        return
+    novel = Novel(int(nid_match.group(1)), fetcher=f)
+    novel.download_novel(
+        path=args.output,
+        file_type='md',
+        download_reviews=True,
+    )
+    logger.bind(force=True).info(f'Done: {novel.title}')
 
 
 def cmd_audiolist(args):
@@ -104,9 +149,18 @@ def cmd_cleanup(args):
 
 
 def cmd_app(args):
-    import flet as ft
-    from app import main
-    ft.run(main)
+    from sfacglib.ui import run_pc
+    run_pc()
+
+
+def cmd_mobile(args):
+    from sfacglib.ui import run_mobile
+    run_mobile(target=args.target)
+
+
+def cmd_web(args):
+    from sfacglib.ui import run_web
+    run_web(host=args.host, port=args.port)
 
 
 def cmd_ocr(args):
@@ -129,6 +183,11 @@ def main():
     p_novel.add_argument('nid', type=int, help='Novel ID')
     p_novel.add_argument('--format', '-f', default='epub', choices=['epub', 'md', 'html', 'txt'])
     p_novel.add_argument('--output', '-o', default='./')
+    p_novel.add_argument('--start-chapter', '-sc', help='Start from this chapter (title or ID)')
+    p_novel.add_argument('--end-chapter', '-ec', help='End at this chapter (title or ID)')
+    p_novel.add_argument('--chapters', '-c', help='Chapter range: "1,3-5,10" or "title1,title2"')
+    p_novel.add_argument('--volumes', '-v', help='Volume filter: "vol1,vol2"')
+    p_novel.add_argument('--reviews', '-r', action='store_true', help='Download reviews along with novel')
     p_novel.set_defaults(func=cmd_novel)
 
     p_ch = sub.add_parser('chapter', help='Download single chapter')
@@ -139,12 +198,27 @@ def main():
 
     p_comic = sub.add_parser('comic', help='Download comic')
     p_comic.add_argument('url', help='Comic URL')
+    p_comic.add_argument('--format', '-f', default='dir', choices=['dir', 'html', 'epub', 'pdf'], help='Output format')
+    p_comic.add_argument('--url-mode', action='store_true', help='Use URL instead of local images (HTML only, URLs may expire)')
     p_comic.add_argument('--output', '-o', default='./')
+    p_comic.add_argument('--start-chapter', '-sc', help='Start from this chapter (title or ID)')
+    p_comic.add_argument('--end-chapter', '-ec', help='End at this chapter (title or ID)')
+    p_comic.add_argument('--chapters', '-c', help='Chapter range: "1,3-5,10" or "title1,title2"')
     p_comic.set_defaults(func=cmd_comic)
+
+    p_convert = sub.add_parser('convert', help='Convert downloaded comic to other formats')
+    p_convert.add_argument('dir', help='Comic directory path')
+    p_convert.add_argument('--formats', '-f', default='html,epub,pdf', help='Output formats, comma separated')
+    p_convert.add_argument('--padding', '-p', type=int, default=0, help='PDF padding in points (default: 0)')
+    p_convert.set_defaults(func=cmd_convert)
 
     p_audio = sub.add_parser('audio', help='Download audiobook')
     p_audio.add_argument('id', type=int, help='Audiobook ID')
     p_audio.add_argument('--output', '-o', default='./')
+    p_audio.add_argument('--start-chapter', '-sc', help='Start from this chapter (title or ID)')
+    p_audio.add_argument('--end-chapter', '-ec', help='End at this chapter (title or ID)')
+    p_audio.add_argument('--chapters', '-c', help='Chapter range: "1,3-5,10" or "title1,title2"')
+    p_audio.add_argument('--volumes', '-v', help='Volume filter: "vol1,vol2"')
     p_audio.set_defaults(func=cmd_audio)
 
     p_review = sub.add_parser('review', help='Download reviews')
@@ -163,8 +237,17 @@ def main():
     p_cleanup = sub.add_parser('cleanup', help='Clean up completed tasks')
     p_cleanup.set_defaults(func=cmd_cleanup)
 
-    p_app = sub.add_parser('app', help='Launch GUI')
+    p_app = sub.add_parser('app', help='Launch PC GUI')
     p_app.set_defaults(func=cmd_app)
+
+    p_mobile = sub.add_parser('mobile', help='Launch mobile UI (Flet/Flutter)')
+    p_mobile.add_argument('--target', default='app', choices=['app', 'apk'], help='Target: app (web) or apk (Flutter)')
+    p_mobile.set_defaults(func=cmd_mobile)
+
+    p_web = sub.add_parser('web', help='Launch web UI')
+    p_web.add_argument('--host', default='127.0.0.1', help='Host to bind')
+    p_web.add_argument('--port', type=int, default=8888, help='Port to bind')
+    p_web.set_defaults(func=cmd_web)
 
     p_ocr = sub.add_parser('ocr', help='OCR image to text')
     p_ocr.add_argument('source', help='Image URL or local path')
