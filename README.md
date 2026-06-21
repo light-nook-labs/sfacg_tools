@@ -266,31 +266,66 @@ f.import_cookies('paste_your_cookie_string_here')
 
 VIP 章节在目录解析时通过 `.icn_vip` 标记检测。
 
-**本地 OCR + NLP（推荐，纯 CPU）**：
+**重要：只有 GIF 格式才是有效的 VIP 章节内容。** 如果获取到的图片不是 GIF，说明 VIP 内容未成功获取。
+
+### OCR 方案
+
+#### 方案 1：本地 OCR + NLP（推荐）
+
+离线、纯 CPU、速度最快。
+
 ```
-GIF 图片 → 帧提取 → 分行 → 智能去拼音 → RapidOCR 识别 → NLP 合并断行
-~57s/GIF，50 字/s，纯 CPU，4 线程
+GIF → 帧提取 → 分行 → 智能去拼音（笔画连续性分析） → RapidOCR 识别（rec_only 模式） → NLP 合并断行
 ```
 
-**DeepSeek Web LLM OCR**：
+- `ocr_fast.py`：优化版本地 OCR，6x faster
+- `nlp.py`：合并图片宽度导致的断行
+- 性能：~57s/GIF，50 字/s，纯 CPU，4 线程
+
+#### 方案 2：DeepSeek Web LLM OCR
+
+浏览器自动化，准确率最高但较慢，有少量幻觉错误。
+
 ```
-GIF 图片 → 帧提取 → 分段 → 上传 DeepSeek → 识别文本 → 去空格 → 去重
-~92s/GIF，23.5 字/s，需要浏览器 + 网络
+GIF → 帧提取 → 分段（1500px） → 上传 DeepSeek Vision → 识别文本 → 去空格 → 去重
 ```
 
-**性能对比（同一 GIF: ch_081）**：
+- `web_llm_vision.py`：DeepSeek Web LLM OCR
+- 性能：~92s/GIF，23.5 字/s，需要浏览器 + 网络
+
+#### 性能对比（同一 GIF: ch_081）
 
 | 方案 | 时间 | 字数 | 准确率 |
 |------|------|------|--------|
-| 本地 OCR | 39.2s | 2020 | 低（乱码） |
-| 本地 OCR + LLM 纠正 | 66.4s | 2074 | 高 |
+| 本地 OCR | 39.2s | 2020 | 低（乱码、错字） |
+| 本地 OCR + LLM 纠正 | 66.4s | 2074 | 高（修正所有乱码） |
 | DeepSeek Web LLM | 91.7s | 2153 | 近 100%（少量幻觉） |
+
+**建议：** 日常用本地 OCR + NLP，高质量需求用 LLM 纠正。
 
 ## 并发模型
 
 - 章节级：`ThreadPoolExecutor(max_workers=8)` 并发下载多章
 - 页面级：每章内部 `ThreadPoolExecutor(max_workers=8)` 并发下载多页
 - 进度条：单 `tqdm` + `threading.Lock` 线程安全更新
+
+## 依赖
+
+```bash
+# 核心
+uv sync
+
+# OCR 支持（本地 OCR）
+uv sync --extra ocr
+# 安装 playwright（Web LLM OCR）
+uv sync --extra web && uv run playwright install chromium
+
+# EPUB 导出
+uv add ebooklib
+
+# PDF 导出
+uv add reportlab
+```
 
 ## 流式写入
 
