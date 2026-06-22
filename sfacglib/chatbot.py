@@ -1,8 +1,27 @@
 import json
 import os
+import subprocess
 from pathlib import Path
 from openai import OpenAI
 from loguru import logger
+
+AGENT_SYSTEM_PROMPT = """你是 SFACG Spider 的智能助手，可以通过自然语言帮助用户完成以下任务：
+
+1. **去拼音**：对 VIP GIF 去除拼音注音，生成可阅读的图像
+2. **OCR 识别**：将 GIF 图片识别为文本
+3. **OCR 纠错**：纠正 OCR 文本中的错别字
+4. **格式转换**：漫画目录转换为 HTML/EPUB/PDF
+5. **文件操作**：读写文件、列出目录
+6. **信息查询**：查看目录结构、文件内容
+
+你可以调用工具来执行这些任务。当用户描述一个任务时，分析意图并调用合适的工具。
+
+常用路径规则：
+- GIF 文件通常在 output/ 目录下
+- 输出文件通常保存到同目录，添加 _de_pinyin 或 _corrected 后缀
+- .env 文件包含配置信息
+
+回复要简洁，只报告结果。"""
 
 TOOLS = [
     {
@@ -52,15 +71,136 @@ TOOLS = [
     {
         'type': 'function',
         'function': {
+            'name': 'remove_pinyin',
+            'description': 'Remove pinyin annotations from VIP GIF image. Returns a clean readable image without pinyin. Much faster than OCR (0.2s vs 39s).',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'input_path': {'type': 'string', 'description': 'Path to the GIF file'},
+                    'output_path': {'type': 'string', 'description': 'Output image path (default: *_de_pinyin.png)'},
+                },
+                'required': ['input_path'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'ocr_gif',
+            'description': 'OCR a VIP GIF image to text. Extracts text from the image using line detection + pinyin removal + RapidOCR.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'input_path': {'type': 'string', 'description': 'Path to the GIF file'},
+                    'output_path': {'type': 'string', 'description': 'Output text file path (default: same name with .txt)'},
+                },
+                'required': ['input_path'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
             'name': 'correct_ocr_text',
-            'description': 'Correct OCR errors in Chinese text. Fixes garbled characters, missing punctuation, broken paragraphs, and OCR artifacts.',
+            'description': 'Correct OCR errors in Chinese text using LLM.',
             'parameters': {
                 'type': 'object',
                 'properties': {
                     'text': {'type': 'string', 'description': 'The raw OCR text to correct'},
-                    'context': {'type': 'string', 'description': 'Optional context about the content (e.g. novel genre, character names)'},
+                    'context': {'type': 'string', 'description': 'Optional context (genre, character names)'},
                 },
                 'required': ['text'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'correct_ocr_file',
+            'description': 'Correct OCR errors in a text file using LLM.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'input_path': {'type': 'string', 'description': 'Path to the text file'},
+                    'output_path': {'type': 'string', 'description': 'Output path (default: *_corrected.txt)'},
+                    'context': {'type': 'string', 'description': 'Optional context about the content'},
+                },
+                'required': ['input_path'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'convert_comic',
+            'description': 'Convert downloaded comic directory to HTML/EPUB/PDF format.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'dir_path': {'type': 'string', 'description': 'Path to the comic directory'},
+                    'formats': {'type': 'string', 'description': 'Output formats, comma separated (e.g. "html,epub,pdf")'},
+                },
+                'required': ['dir_path'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'batch_remove_pinyin',
+            'description': 'Remove pinyin from all GIF files in a directory.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'dir_path': {'type': 'string', 'description': 'Directory containing GIF files'},
+                    'pattern': {'type': 'string', 'description': 'File pattern (default: *.gif)'},
+                },
+                'required': ['dir_path'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'batch_ocr',
+            'description': 'OCR all GIF files in a directory to text files.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'dir_path': {'type': 'string', 'description': 'Directory containing GIF files'},
+                    'pattern': {'type': 'string', 'description': 'File pattern (default: *.gif)'},
+                },
+                'required': ['dir_path'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'batch_correct_ocr',
+            'description': 'Correct OCR errors in all text files in a directory.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'dir_path': {'type': 'string', 'description': 'Directory containing text files'},
+                    'pattern': {'type': 'string', 'description': 'File pattern (default: *.txt)'},
+                    'context': {'type': 'string', 'description': 'Optional context about the content'},
+                },
+                'required': ['dir_path'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'run_command',
+            'description': 'Run a shell command. Use for advanced operations not covered by other tools.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'command': {'type': 'string', 'description': 'Shell command to run'},
+                },
+                'required': ['command'],
             },
         },
     },
@@ -91,7 +231,7 @@ class ChatBot:
         api_key: str = '',
         model: str = '',
         system_prompt: str = '',
-        max_turns: int = 20,
+        max_turns: int = 30,
     ):
         self.base_url = base_url or os.environ.get('CHATBOT_BASE_URL', '')
         self.api_key = api_key or os.environ.get('CHATBOT_API_KEY', '')
@@ -105,10 +245,9 @@ class ChatBot:
 
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         self.max_turns = max_turns
-        self.system_prompt = system_prompt
+        self.system_prompt = system_prompt or AGENT_SYSTEM_PROMPT
         self.messages: list[dict] = []
-        if system_prompt:
-            self.messages.append({'role': 'system', 'content': system_prompt})
+        self.messages.append({'role': 'system', 'content': self.system_prompt})
 
     def chat(self, user_input: str) -> str:
         self.messages.append({'role': 'user', 'content': user_input})
@@ -132,7 +271,9 @@ class ChatBot:
 
             for tc in msg.tool_calls:
                 args = json.loads(tc.function.arguments)
+                logger.info(f'Tool call: {tc.function.name}({args})')
                 result = self._exec_tool(tc.function.name, args)
+                logger.info(f'Tool result: {result[:200]}...' if len(result) > 200 else f'Tool result: {result}')
                 self.messages.append({
                     'role': 'tool',
                     'tool_call_id': tc.id,
@@ -149,8 +290,24 @@ class ChatBot:
                 return self._tool_write_file(args['path'], args['content'])
             elif name == 'list_dir':
                 return self._tool_list_dir(args['path'], args.get('pattern', '*'))
+            elif name == 'remove_pinyin':
+                return self._tool_remove_pinyin(args['input_path'], args.get('output_path', ''))
+            elif name == 'ocr_gif':
+                return self._tool_ocr_gif(args['input_path'], args.get('output_path', ''))
             elif name == 'correct_ocr_text':
                 return self._tool_correct_ocr(args['text'], args.get('context', ''))
+            elif name == 'correct_ocr_file':
+                return self._tool_correct_ocr_file(args['input_path'], args.get('output_path', ''), args.get('context', ''))
+            elif name == 'convert_comic':
+                return self._tool_convert_comic(args['dir_path'], args.get('formats', 'html,epub,pdf'))
+            elif name == 'batch_remove_pinyin':
+                return self._tool_batch_remove_pinyin(args['dir_path'], args.get('pattern', '*.gif'))
+            elif name == 'batch_ocr':
+                return self._tool_batch_ocr(args['dir_path'], args.get('pattern', '*.gif'))
+            elif name == 'batch_correct_ocr':
+                return self._tool_batch_correct_ocr(args['dir_path'], args.get('pattern', '*.txt'), args.get('context', ''))
+            elif name == 'run_command':
+                return self._tool_run_command(args['command'])
             else:
                 return f'Unknown tool: {name}'
         except Exception as e:
@@ -184,11 +341,38 @@ class ChatBot:
             lines.append(f'... and {len(entries) - 100} more')
         return '\n'.join(lines) or '(empty)'
 
+    def _tool_remove_pinyin(self, input_path: str, output_path: str = '') -> str:
+        from .ocr_fast import remove_pinyin_gif
+        p = Path(input_path)
+        if not p.exists():
+            return f'File not found: {input_path}'
+        if not p.suffix.lower() == '.gif':
+            return f'Not a GIF file: {input_path}'
+        gif_bytes = p.read_bytes()
+        img = remove_pinyin_gif(gif_bytes)
+        out = Path(output_path) if output_path else p.with_name(p.stem + '_de_pinyin.png')
+        out.parent.mkdir(parents=True, exist_ok=True)
+        img.save(str(out))
+        return f'Done: {out} ({img.width}x{img.height})'
+
+    def _tool_ocr_gif(self, input_path: str, output_path: str = '') -> str:
+        from .ocr_fast import ocr_gif
+        from .nlp import merge_wrapped_lines
+        p = Path(input_path)
+        if not p.exists():
+            return f'File not found: {input_path}'
+        gif_bytes = p.read_bytes()
+        raw = ocr_gif(gif_bytes)
+        text = merge_wrapped_lines(raw)
+        out = Path(output_path) if output_path else p.with_suffix('.txt')
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding='utf-8')
+        return f'Done: {out} ({len(text)} chars)'
+
     def _tool_correct_ocr(self, text: str, context: str = '') -> str:
         prompt = f'请纠正以下OCR文本中的错误：\n\n{text}'
         if context:
             prompt = f'背景信息：{context}\n\n{prompt}'
-
         resp = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -199,48 +383,91 @@ class ChatBot:
         )
         return resp.choices[0].message.content or text
 
-    def reset(self):
-        self.messages = []
-        if self.system_prompt:
-            self.messages.append({'role': 'system', 'content': self.system_prompt})
-
-    def correct_ocr_file(self, input_path: str, output_path: str = '', context: str = '') -> str:
+    def _tool_correct_ocr_file(self, input_path: str, output_path: str = '', context: str = '') -> str:
         p = Path(input_path)
         if not p.exists():
-            raise FileNotFoundError(f'File not found: {input_path}')
-
+            return f'File not found: {input_path}'
         text = p.read_text(encoding='utf-8')
-        logger.info(f'Read {len(text)} chars from {input_path}')
-
         corrected = self._tool_correct_ocr(text, context)
-        logger.info(f'Corrected: {len(corrected)} chars')
-
         out = Path(output_path) if output_path else p.with_name(p.stem + '_corrected' + p.suffix)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(corrected, encoding='utf-8')
-        logger.info(f'Saved to {out}')
-        return str(out)
+        return f'Done: {out} ({len(corrected)} chars)'
 
-    def correct_ocr_dir(self, dir_path: str, pattern: str = '*.txt', context: str = '') -> list[str]:
+    def _tool_convert_comic(self, dir_path: str, formats: str = 'html,epub,pdf') -> str:
+        from .convert import convert_comic
+        from .fetcher import Fetcher
+        f = Fetcher()
+        f.auto_auth()
+        convert_comic(dir_path, formats=formats.split(','), fetcher=f)
+        return f'Done: converted {dir_path} to {formats}'
+
+    def _tool_batch_remove_pinyin(self, dir_path: str, pattern: str = '*.gif') -> str:
         d = Path(dir_path)
         if not d.exists():
-            raise FileNotFoundError(f'Directory not found: {dir_path}')
-
+            return f'Directory not found: {dir_path}'
         files = sorted(d.rglob(pattern))
+        if not files:
+            return f'No files matching {pattern} in {dir_path}'
         results = []
         for i, f in enumerate(files, 1):
-            logger.info(f'[{i}/{len(files)}] {f.name}')
             try:
-                out = self.correct_ocr_file(str(f), context=context)
-                results.append(out)
+                logger.info(f'[{i}/{len(files)}] {f.name}')
+                result = self._tool_remove_pinyin(str(f))
+                results.append(result)
             except Exception as e:
-                logger.error(f'Failed: {f.name} - {e}')
-        return results
+                results.append(f'Failed: {f.name} - {e}')
+        return '\n'.join(results)
+
+    def _tool_batch_ocr(self, dir_path: str, pattern: str = '*.gif') -> str:
+        d = Path(dir_path)
+        if not d.exists():
+            return f'Directory not found: {dir_path}'
+        files = sorted(d.rglob(pattern))
+        if not files:
+            return f'No files matching {pattern} in {dir_path}'
+        results = []
+        for i, f in enumerate(files, 1):
+            try:
+                logger.info(f'[{i}/{len(files)}] {f.name}')
+                result = self._tool_ocr_gif(str(f))
+                results.append(result)
+            except Exception as e:
+                results.append(f'Failed: {f.name} - {e}')
+        return '\n'.join(results)
+
+    def _tool_batch_correct_ocr(self, dir_path: str, pattern: str = '*.txt', context: str = '') -> str:
+        d = Path(dir_path)
+        if not d.exists():
+            return f'Directory not found: {dir_path}'
+        files = sorted(d.rglob(pattern))
+        if not files:
+            return f'No files matching {pattern} in {dir_path}'
+        results = []
+        for i, f in enumerate(files, 1):
+            try:
+                logger.info(f'[{i}/{len(files)}] {f.name}')
+                result = self._tool_correct_ocr_file(str(f), context=context)
+                results.append(result)
+            except Exception as e:
+                results.append(f'Failed: {f.name} - {e}')
+        return '\n'.join(results)
+
+    def _tool_run_command(self, command: str) -> str:
+        result = subprocess.run(
+            command, shell=True, capture_output=True, text=True, timeout=60
+        )
+        output = result.stdout + result.stderr
+        return output[:2000] if output else '(no output)'
+
+    def reset(self):
+        self.messages = []
+        self.messages.append({'role': 'system', 'content': self.system_prompt})
 
 
 def interactive_chat(base_url: str = '', api_key: str = '', model: str = ''):
     bot = ChatBot(base_url=base_url, api_key=api_key, model=model)
-    print(f'ChatBot ready ({bot.model})')
+    print(f'SFACG Agent ready ({bot.model})')
     print('Type "quit" to exit, "reset" to clear history\n')
 
     while True:
