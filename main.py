@@ -15,9 +15,12 @@ import sys
 import re
 import argparse
 from pathlib import Path
+from dotenv import load_dotenv
 from loguru import logger
 from sfacglib.fetcher import Fetcher
 from sfacglib.progress import ProgressTracker
+
+load_dotenv()
 
 
 def _get_fetcher() -> Fetcher:
