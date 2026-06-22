@@ -302,7 +302,18 @@ GIF 解码为 PIL Image 帧。本例为单帧长图。
 
 ### 仅去拼音（不 OCR，更快）
 
-去拼音后的图像已可阅读，适合追求速度的场景。跳过 OCR 和 NLP，耗时约 1-2 秒。
+去拼音后的图像已可阅读，适合追求速度的场景。跳过 OCR 和 NLP，耗时约 0.2 秒（完整 OCR 39 秒，快 200 倍）。
+
+测试硬件：Dell Latitude 7350，Intel Core M-5Y71 @ 1.20GHz，CPU 50-60°C 降频状态。
+
+| 步骤 | 耗时 | 产物 |
+|------|------|------|
+| remove_pinyin | 0.21s | 去拼音帧列表 |
+| remove_pinyin_gif | 0.17s | 合并后的单张图像 |
+| remove_pinyin_to_bytes | 0.28s | PNG 字节（280KB） |
+| 端到端 | 0.66s | — |
+
+> 现代硬件预计 <0.1 秒。
 
 ```bash
 # CLI
