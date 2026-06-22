@@ -141,8 +141,14 @@ Bot: 纠错完成。文件已保存为 ch_091_local_ocr_corrected.md
      她握着宋时鸢的澄心剑，用剑尖刺穿了自己心脉，断绝气息，神仙难救。
 
 You: 下载小说 43708
-Bot: 请运行以下命令：
-     uv run python main.py novel 43708 -f epub -o ./output/
+Bot: 下载命令：
+     uv run python main.py novel 43708
+     如需指定卷或章节范围，可加参数：
+     uv run python main.py novel 43708 -v "第一卷"
+     uv run python main.py novel 43708 -sc "第一章" -ec "第十章"
+     如需下载 VIP 章节，请先配置 Cookie。
+
+You: quit
 ```
 
 ## VIP 章节与 OCR
