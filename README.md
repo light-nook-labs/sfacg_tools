@@ -100,7 +100,7 @@ SFACG 需要 Cookie 登录：
 
 ### ChatBot Agent
 
-`chatbot.py` 实现了一个 Agent（不仅仅是聊天机器人），可以陪你聊天，也可以通过自然语言理解意图，自动执行简单任务。复杂的任务会输出命令让用户自行运行。
+`chatbot.py` 实现了一个 Agent（不仅仅是聊天机器人），可以陪你聊天，也可以通过自然语言理解意图，自动执行简单任务。复杂的任务会输出命令让用户自行运行。这个Agent在OCR流水线中实现最后一步llm纠正。
 
 ```bash
 $ uv run python main.py chat
