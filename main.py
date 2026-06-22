@@ -174,6 +174,20 @@ def cmd_ocr(args):
         print(text)
 
 
+def cmd_ocr_preprocess(args):
+    from sfacglib.ocr_fast import remove_pinyin_gif
+    source = Path(args.source)
+    if not source.exists():
+        logger.error(f'Not found: {source}')
+        return
+    gif_bytes = source.read_bytes()
+    img = remove_pinyin_gif(gif_bytes)
+    out = Path(args.output) if args.output else source.with_name(source.stem + '_de_pinyin.png')
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.save(str(out))
+    logger.bind(force=True).info(f'Done: {out} ({img.width}x{img.height})')
+
+
 def cmd_chat(args):
     from sfacglib.chatbot import interactive_chat
     interactive_chat()
@@ -272,6 +286,11 @@ def main():
     p_ocr.add_argument('--output', '-o', help='Output file path')
     p_ocr.add_argument('--workers', type=int, default=4, help='OCR threads')
     p_ocr.set_defaults(func=cmd_ocr)
+
+    p_pre = sub.add_parser('ocr-preprocess', help='Remove pinyin from VIP GIF (no OCR, fast)')
+    p_pre.add_argument('source', help='GIF file path')
+    p_pre.add_argument('--output', '-o', help='Output image path (default: *_de_pinyin.png)')
+    p_pre.set_defaults(func=cmd_ocr_preprocess)
 
     p_chat = sub.add_parser('chat', help='Interactive chat with LLM (tool-calling agent)')
     p_chat.set_defaults(func=cmd_chat)

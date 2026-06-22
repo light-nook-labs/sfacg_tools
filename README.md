@@ -300,6 +300,27 @@ GIF 解码为 PIL Image 帧。本例为单帧长图。
 - 每行独立识别，避免行间干扰
 - 已去拼音，避免拼音被误识别为汉字
 
+### 仅去拼音（不 OCR，更快）
+
+去拼音后的图像已可阅读，适合追求速度的场景。跳过 OCR 和 NLP，耗时约 1-2 秒。
+
+```bash
+# CLI
+uv run python main.py ocr-preprocess input.gif -o output.png
+
+# Python API
+from sfacglib.ocr_fast import remove_pinyin_gif, remove_pinyin_to_bytes
+
+gif_bytes = Path('chapter.gif').read_bytes()
+
+# 返回 PIL Image
+img = remove_pinyin_gif(gif_bytes)
+img.save('output.png')
+
+# 返回 bytes（适合网络传输）
+png_bytes = remove_pinyin_to_bytes(gif_bytes, fmt='PNG')
+```
+
 ### LLM 纠错（可选）
 
 ```bash

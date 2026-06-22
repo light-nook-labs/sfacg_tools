@@ -199,6 +199,65 @@ def ocr_gif(gif_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: int =
     return merged
 
 
+def remove_pinyin(gif_bytes: bytes) -> list[Image.Image]:
+    start_time = time.perf_counter()
+    logger.info(f'remove_pinyin: {len(gif_bytes)} bytes')
+
+    frames = gif_to_frames(gif_bytes)
+    results = []
+
+    for frame_idx, frame in enumerate(frames):
+        cropped = crop_whitespace(frame)
+        if cropped is None:
+            continue
+
+        gray = np.array(cropped.convert('L'))
+        h, w = gray.shape
+
+        gaps = find_line_gaps(gray, min_gap=5)
+        lines_bounds = []
+        prev = 0
+        for gap_start, gap_end in gaps:
+            if gap_start - prev >= 10:
+                lines_bounds.append((prev, gap_start))
+            prev = gap_end
+        if h - prev >= 10:
+            lines_bounds.append((prev, h))
+
+        de_pinyin = _remove_pinyin_from_image(gray, lines_bounds)
+        result_img = Image.fromarray(de_pinyin)
+        results.append(result_img)
+        logger.info(f'remove_pinyin: frame {frame_idx}, {w}x{h}, {len(lines_bounds)} lines')
+
+    total_elapsed = time.perf_counter() - start_time
+    logger.info(f'remove_pinyin: done, {len(results)} frames, {total_elapsed:.1f}s')
+    return results
+
+
+def remove_pinyin_gif(gif_bytes: bytes) -> Image.Image:
+    frames = remove_pinyin(gif_bytes)
+    if not frames:
+        raise ValueError('No frames in GIF')
+    if len(frames) == 1:
+        return frames[0]
+
+    total_h = sum(f.height for f in frames)
+    max_w = max(f.width for f in frames)
+    combined = Image.new('RGB', (max_w, total_h), (255, 255, 255))
+    y = 0
+    for f in frames:
+        combined.paste(f, (0, y))
+        y += f.height
+    return combined
+
+
+def remove_pinyin_to_bytes(gif_bytes: bytes, fmt: str = 'PNG') -> bytes:
+    img = remove_pinyin_gif(gif_bytes)
+    buf = BytesIO()
+    img.save(buf, format=fmt)
+    return buf.getvalue()
+
+
 def ocr_image(image_source: str | Path, workers: int = OCR_WORKERS, cpu_num_threads: int = 4) -> str:
     if isinstance(image_source, Path) or not str(image_source).startswith('http'):
         img_bytes = Path(image_source).read_bytes()
