@@ -129,6 +129,17 @@ Bot: Done: output/xxx/ch_001.txt (2239 chars)
      Done: output/xxx/ch_002.txt (1856 chars)
      ...
 
+You: output/xxx/ch_091_local_ocr.md 纠错后输出前5行
+Bot: 纠错完成。文件已保存为 ch_091_local_ocr_corrected.md
+
+     ### 第九十章_挫骨扬灰，尸骨无存_（4k5）
+
+     小狐妖......死了？！
+
+     宋时鸢发誓要用性命保护的小狐妖......她死了？！
+
+     她握着宋时鸢的澄心剑，用剑尖刺穿了自己心脉，断绝气息，神仙难救。
+
 You: 下载小说 43708
 Bot: 请运行以下命令：
      uv run python main.py novel 43708 -f epub -o ./output/
