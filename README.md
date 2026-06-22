@@ -98,24 +98,40 @@ SFACG 需要 Cookie 登录：
 2. F12 → Network → 刷新页面 → 复制任意请求的 `Cookie` 头
 3. 写入 `.env` 文件的 `COOKIE=` 字段
 
-### ChatBot
+### Agent（智能助手）
 
-ChatBot 用于纠正OCR识别结果，也可以进行交互式聊天：
+Agent 可以通过自然语言理解意图，自动执行简单任务：
+
+**可直接执行：**
+- 去拼音：`"把这个 GIF 去拼音"` → 自动调用 `remove_pinyin`
+- OCR 识别：`"识别这个 GIF"` → 自动调用 `ocr_gif`
+- OCR 纠错：`"纠正这个文本"` → 自动调用 `correct_ocr_file`
+- 批量操作：`"把这个目录的 GIF 全部去拼音"` → 自动调用 `batch_remove_pinyin`
+- 文件操作：`"读取 xxx 文件"` / `"列出 output 目录"`
+
+**输出命令让用户自行运行：**
+- 下载小说/漫画/有声
+- 格式转换
+- 大批量操作（>10 个文件）
+- 需要登录的操作
+- 长时间运行的操作
 
 ```bash
-$ uv run main.py chat
-ChatBot ready (mimo-v2.5-pro)
-Type "quit" to exit, "reset" to clear history
+uv run python main.py chat
+```
 
-You: hello
+```
+You: 把 output/xxx/ch_001.gif 去拼音
+Bot: Done: output/xxx/ch_001_de_pinyin.png (706x5691)
 
-Bot: 你好！我是MiMo-v2.5-pro，由小米MiMo团队开发的AI助手。很高兴见到你！有什么我可以帮助你的吗？
+You: 把这个目录所有 GIF 识别成文本
+Bot: Done: output/xxx/ch_001.txt (2239 chars)
+     Done: output/xxx/ch_002.txt (1856 chars)
+     ...
 
-You: how are you
-
-Bot: 我很好，谢谢你！😊 作为一个AI助手，我随时准备着为你提供帮助。今天过得怎么样？有什么有趣的事情想聊聊，或者有什么问题需要我帮忙解决吗？
-
-You: quit
+You: 下载小说 43708
+Bot: 请运行以下命令：
+     uv run python main.py novel 43708 -f epub -o ./output/
 ```
 
 ## VIP 章节与 OCR

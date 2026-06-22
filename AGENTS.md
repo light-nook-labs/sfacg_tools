@@ -28,7 +28,7 @@ sfacglib/
   ocr_fast.py     # Optimized local OCR (smart pinyin removal, rec_only, parallel)
   llm_vision.py   # LLM Vision API for OCR
   web_llm_vision.py # Browser-based LLM Vision (DeepSeek)
-  chatbot.py      # OpenAI-compatible chatbot with tool calling (OCR correction)
+  chatbot.py      # Agent with tool calling (OCR, pinyin removal, batch ops)
   nlp.py          # NLP post-processing (merge wrapped lines)
   progress.py     # Progress tracking with SQLite
   utils.py        # Shared utilities
