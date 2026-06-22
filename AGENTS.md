@@ -59,6 +59,15 @@ buildozer.spec    # Android APK build config
 
 ## Key Design Patterns
 
+### ChatBot Agent
+
+`chatbot.py` implements an agent (not just a chatbot) that can:
+- Chat with users naturally
+- Execute tasks via tool calling (OCR, pinyin removal, batch operations)
+- Refuse complex tasks and output CLI commands instead
+
+See [README.md](README.md#agent智能助手) for usage examples.
+
 ### Three-Layer Abstraction
 
 All content types follow a three-layer hierarchy: Container → Section → Item. See [README.md](README.md#三层抽象) for details.
