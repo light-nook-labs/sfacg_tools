@@ -148,6 +148,9 @@ Bot: 下载命令：
      uv run python main.py novel 43708 -sc "第一章" -ec "第十章"
      如需下载 VIP 章节，请先配置 Cookie。
 
+You: hello
+Bot: 你好！有什么我可以帮助你的吗？
+
 You: quit
 ```
 
