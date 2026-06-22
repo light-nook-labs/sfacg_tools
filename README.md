@@ -96,27 +96,6 @@ uv run python main.py convert <comic_dir> -f <formats>
 # PDF 边距：-p 20
 ```
 
-### Chatbot（OCR 纠错）
-
-在 `.env` 中配置：
-
-```env
-CHATBOT_BASE_URL=https://your-api-endpoint/v1
-CHATBOT_API_KEY=your-api-key
-CHATBOT_MODEL=your-model-name
-```
-
-```bash
-# 交互式聊天（tool calling：读写文件、列表目录）
-uv run python main.py chat
-
-# OCR 纠错单文件
-uv run python main.py ocr-fix input.txt -o corrected.txt
-
-# OCR 纠错目录
-uv run python main.py ocr-fix ./ocr_output/ --pattern "*.txt" -c "玄幻小说，主角名：xxx"
-```
-
 ## 登录
 
 SFACG 登录需要验证码，不支持密码登录。从浏览器导入 Cookie：
@@ -175,14 +154,79 @@ main.py             # CLI 入口
 
 VIP 章节通过 `.icn_vip` 标记检测，下载为 GIF 格式。
 
-### OCR 流程
+### OCR 流程（ocr_fast.py）
+
+以 `common.gif`（728x5755, 137 行）为例，展示完整流程：
 
 ```
-GIF → 帧提取 → 分行 → 去拼音 → RapidOCR → NLP 合并断行 → [可选] LLM 纠错
+Step 1: GIF → 帧提取
+  输入: common.gif (728x5755)
+  输出: 1 帧 PIL Image
+
+Step 2: 裁剪空白边距
+  输入: 728x5755
+  输出: 706x5691 (去除上下左右空白)
+
+Step 3: 行间距检测 (find_line_gaps)
+  输入: 灰度图 706x5691
+  输出: 137 个行边界 [(y_start, y_end), ...]
+
+Step 4: 智能去拼音 (_remove_pinyin_from_image)
+  输入: 灰度图 + 行边界
+  方法: 笔画宽度分析 — 拼音笔画细，汉字笔画粗
+  输出: 去除拼音后的图像 (仅保留汉字区域)
+
+Step 5: 提取行图像 (_extract_line_images)
+  输出: 137 个 (line_id, PIL.Image) 行图像
+
+Step 6: RapidOCR 识别 (_ocr_line_rec_only, use_det=False)
+  输入: 每行图像
+  输出: 每行文本 (仅识别含汉字的行)
+
+Step 7: NLP 合并断行 (merge_wrapped_lines)
+  输入: 原始行文本
+  输出: 合并后的段落
 ```
 
-- `ocr_fast.py`：本地 OCR，纯 CPU，~57s/GIF
-- `chatbot.py`：LLM 纠错，修正错别字和伪影
+#### 前 5 行识别结果
+
+```
+输入行图像 → RapidOCR 输出:
+
+Line 0: 宋时轩又被在狐宫关了好几天。
+Line 1: 关得他几乎要怀疑那天陆竹心和他说的信花节相
+Line 2: 邀，是不是在骗他了。
+Line 3: 直到初七的那一日下午，宋时轩才被从狐宫里放
+Line 4: 出来。
+
+NLP 合并后:
+
+宋时轩又被在狐宫关了好几天。
+
+关得他几乎要怀疑那天陆竹心和他说的信花节相邀，是不是在骗他了。
+
+直到初七的那一日下午，宋时轩才被从狐宫里放出来。
+```
+
+- GIF 总行数：137 行
+- 识别模式：`rec_only`（跳过检测，直接识别，速度更快）
+- 纯 CPU，4 线程，无网络依赖
+
+### LLM 纠错（可选）
+
+OCR 结果质量已很高，仅少数错别字需修正。使用 `chatbot.py` 调用 LLM API 纠错：
+
+```bash
+uv run python main.py ocr-fix input.txt -o corrected.txt
+```
+
+`.env` 配置：
+
+```env
+CHATBOT_BASE_URL=https://your-api-endpoint/v1
+CHATBOT_API_KEY=your-api-key
+CHATBOT_MODEL=your-model-name
+```
 
 ## CSS 选择器
 
