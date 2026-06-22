@@ -156,51 +156,47 @@ VIP 章节通过 `.icn_vip` 标记检测，下载为 GIF 格式。
 
 ### OCR 流程（ocr_fast.py）
 
-以 `common.gif`（728x5755, 137 行）为例，展示完整流程：
+以 `common.gif`（728x5755, 137 行）为例，展示完整流程及中间产物：
+
+**Step 1: GIF → 帧提取**
+
+![原始帧](docs/ocr_workflow/step1_frame.png)
+
+GIF 解码为 PIL Image 帧。本例为单帧长图。
+
+**Step 2: 裁剪空白边距**
+
+![裁剪后](docs/ocr_workflow/step2_cropped.png)
+
+去除上下左右空白区域，减少无效计算。
+
+**Step 3: 行间距检测 (find_line_gaps)**
+
+![行检测](docs/ocr_workflow/step3_lines.png)
+
+分析灰度图像素行亮度，找到行与行之间的空白间隙，划分出 137 个行边界。
+
+**Step 4: 智能去拼音 (_remove_pinyin_from_image)**
+
+![去拼音](docs/ocr_workflow/step4_de_pinyin.png)
+
+通过笔画宽度分析区分拼音（笔画细）和汉字（笔画粗），去除拼音区域，避免干扰识别。
+
+**Step 5: 提取行图像 → RapidOCR 识别**
+
+| 行图像 | OCR 输出 |
+|--------|----------|
+| ![Line 0](docs/ocr_workflow/step5_line_0.png) | 宋时轩又被在狐宫关了好几天。 |
+| ![Line 1](docs/ocr_workflow/step5_line_1.png) | 关得他几乎要怀疑那天陆竹心和他说的信花节相 |
+| ![Line 2](docs/ocr_workflow/step5_line_2.png) | 邀，是不是在骗他了。 |
+| ![Line 3](docs/ocr_workflow/step5_line_3.png) | 直到初七的那一日下午，宋时轩才被从狐宫里放 |
+| ![Line 4](docs/ocr_workflow/step5_line_4.png) | 出来。 |
+
+每行图像独立识别（`rec_only` 模式，跳过检测），含拼音的行自动过滤。
+
+**Step 6: NLP 合并断行 (merge_wrapped_lines)**
 
 ```
-Step 1: GIF → 帧提取
-  输入: common.gif (728x5755)
-  输出: 1 帧 PIL Image
-
-Step 2: 裁剪空白边距
-  输入: 728x5755
-  输出: 706x5691 (去除上下左右空白)
-
-Step 3: 行间距检测 (find_line_gaps)
-  输入: 灰度图 706x5691
-  输出: 137 个行边界 [(y_start, y_end), ...]
-
-Step 4: 智能去拼音 (_remove_pinyin_from_image)
-  输入: 灰度图 + 行边界
-  方法: 笔画宽度分析 — 拼音笔画细，汉字笔画粗
-  输出: 去除拼音后的图像 (仅保留汉字区域)
-
-Step 5: 提取行图像 (_extract_line_images)
-  输出: 137 个 (line_id, PIL.Image) 行图像
-
-Step 6: RapidOCR 识别 (_ocr_line_rec_only, use_det=False)
-  输入: 每行图像
-  输出: 每行文本 (仅识别含汉字的行)
-
-Step 7: NLP 合并断行 (merge_wrapped_lines)
-  输入: 原始行文本
-  输出: 合并后的段落
-```
-
-#### 前 5 行识别结果
-
-```
-输入行图像 → RapidOCR 输出:
-
-Line 0: 宋时轩又被在狐宫关了好几天。
-Line 1: 关得他几乎要怀疑那天陆竹心和他说的信花节相
-Line 2: 邀，是不是在骗他了。
-Line 3: 直到初七的那一日下午，宋时轩才被从狐宫里放
-Line 4: 出来。
-
-NLP 合并后:
-
 宋时轩又被在狐宫关了好几天。
 
 关得他几乎要怀疑那天陆竹心和他说的信花节相邀，是不是在骗他了。
@@ -208,16 +204,26 @@ NLP 合并后:
 直到初七的那一日下午，宋时轩才被从狐宫里放出来。
 ```
 
-- GIF 总行数：137 行
-- 识别模式：`rec_only`（跳过检测，直接识别，速度更快）
-- 纯 CPU，4 线程，无网络依赖
+将因图片宽度被截断的行重新合并为完整段落。
+
+### OCR 方案对比
+
+| 方案 | 时间 | 字数 | 准确率 | 依赖 |
+|------|------|------|--------|------|
+| 本地 OCR (ocr_fast) | ~39s | 2020 | 可读，少量错字 | 无（纯 CPU） |
+| 本地 OCR + LLM 纠正 | ~66s | 2074 | 高（修正错别字和伪影） | LLM API |
+| DeepSeek Web LLM | ~92s | 2153 | 近 100%（少量幻觉） | 浏览器 + 网络 |
+
+**建议：** 日常用本地 OCR，高质量需求加 LLM 纠正。
 
 ### LLM 纠错（可选）
 
-OCR 结果质量已很高，仅少数错别字需修正。使用 `chatbot.py` 调用 LLM API 纠错：
-
 ```bash
+# 单文件
 uv run python main.py ocr-fix input.txt -o corrected.txt
+
+# 批量目录
+uv run python main.py ocr-fix ./ocr_output/ --pattern "*.txt" -c "玄幻小说，主角名：xxx"
 ```
 
 `.env` 配置：
