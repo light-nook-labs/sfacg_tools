@@ -98,7 +98,7 @@ SFACG 需要 Cookie 登录：
 2. F12 → Network → 刷新页面 → 复制任意请求的 `Cookie` 头
 3. 写入 `.env` 文件的 `COOKIE=` 字段
 
-### Agent（智能助手）
+### ChatBot Agent
 
 `chatbot.py` 实现了一个 Agent（不仅仅是聊天机器人），可以陪你聊天，也可以通过自然语言理解意图，自动执行简单任务：
 
