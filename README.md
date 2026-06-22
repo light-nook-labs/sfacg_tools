@@ -98,6 +98,26 @@ SFACG 需要 Cookie 登录：
 2. F12 → Network → 刷新页面 → 复制任意请求的 `Cookie` 头
 3. 写入 `.env` 文件的 `COOKIE=` 字段
 
+### ChatBot
+
+ChatBot 用于纠正OCR识别结果，也可以进行交互式聊天：
+
+```bash
+$ uv run main.py chat
+ChatBot ready (mimo-v2.5-pro)
+Type "quit" to exit, "reset" to clear history
+
+You: hello
+
+Bot: 你好！我是MiMo-v2.5-pro，由小米MiMo团队开发的AI助手。很高兴见到你！有什么我可以帮助你的吗？
+
+You: how are you
+
+Bot: 我很好，谢谢你！😊 作为一个AI助手，我随时准备着为你提供帮助。今天过得怎么样？有什么有趣的事情想聊聊，或者有什么问题需要我帮忙解决吗？
+
+You: quit
+```
+
 ## VIP 章节与 OCR
 
 VIP 章节通过 `.icn_vip` 标记检测，下载为 GIF 格式（含拼音注音）。
