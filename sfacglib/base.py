@@ -1,4 +1,3 @@
-import re
 import json
 import threading
 from pathlib import Path
@@ -8,15 +7,7 @@ from tqdm import tqdm
 from loguru import logger
 from .fetcher import Fetcher
 from .progress import ProgressTracker, _extract_id
-
-
-def _sanitize_filename(name: str) -> str:
-    if not name:
-        return ''
-    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
-    name = re.sub(r'\s+', '_', name)
-    name = name.strip('_. ')
-    return name[:200] if name else ''
+from .utils import sanitize_filename as _sanitize_filename
 
 
 class AntiScrapingError(Exception):

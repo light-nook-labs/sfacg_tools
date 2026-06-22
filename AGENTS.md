@@ -28,6 +28,7 @@ sfacglib/
   ocr_fast.py     # Optimized local OCR (smart pinyin removal, rec_only, parallel)
   llm_vision.py   # LLM Vision API for OCR
   web_llm_vision.py # Browser-based LLM Vision (DeepSeek)
+  chatbot.py      # OpenAI-compatible chatbot with tool calling (OCR correction)
   nlp.py          # NLP post-processing (merge wrapped lines)
   progress.py     # Progress tracking with SQLite
   utils.py        # Shared utilities
@@ -50,11 +51,10 @@ sfacglib/
       templates/
         index.html
 
-app.py            # Flet Material Design UI (Desktop/Web/Android/iOS)
 main.py           # Unified CLI entry point
-build.sh          # Build script (desktop/web/apk/ios)
 buildozer.spec    # Android APK build config
 .cookies.json     # Saved session cookies — gitignored
+.env              # Chatbot config (CHATBOT_BASE_URL, CHATBOT_API_KEY, CHATBOT_MODEL)
 ```
 
 ## Key Design Patterns

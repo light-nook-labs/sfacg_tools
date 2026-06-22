@@ -495,7 +495,7 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
             try:
                 cover_data = self.fetcher.get_binary(cover_url)
                 book.set_cover('cover.jpg', cover_data)
-            except:
+            except Exception:
                 pass
 
         spine = ['nav']

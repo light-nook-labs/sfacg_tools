@@ -13,7 +13,6 @@ def merge_wrapped_lines(text: str) -> str:
             if buffer:
                 result.append(buffer)
                 buffer = ''
-            result.append('')
             continue
 
         if not buffer:
@@ -29,7 +28,7 @@ def merge_wrapped_lines(text: str) -> str:
     if buffer:
         result.append(buffer)
 
-    return '\n'.join(result)
+    return '\n\n'.join(result)
 
 
 def _should_merge(prev: str, curr: str) -> bool:

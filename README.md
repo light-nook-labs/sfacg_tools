@@ -18,6 +18,7 @@
 - [x] CSS 选择器集中管理
 - [x] 流式写入防止数据丢失
 - [x] 目录模式便于断点续传
+- [x] OCR + LLM 纠错（VIP 章节）
 
 ## 安装
 
@@ -66,6 +67,15 @@ uv run python main.py convert output/落樱之剑 -f html,epub,pdf
 
 # OCR 图片
 uv run python main.py ocr <image_url_or_path> -o output.txt
+
+# 交互式聊天（tool-calling agent）
+uv run python main.py chat
+
+# OCR 纠错（单文件）
+uv run python main.py ocr-fix input.txt -o corrected.txt
+
+# OCR 纠错（批量目录）
+uv run python main.py ocr-fix ./ocr_output/ --pattern "*.txt" -c "玄幻小说，主角名：xxx"
 ```
 
 ### GUI
@@ -186,6 +196,7 @@ sfacglib/
   ocr_fast.py         # 优化本地 OCR（智能去拼音、rec_only 模式、并行识别）
   llm_vision.py       # LLM Vision API
   web_llm_vision.py   # 浏览器 LLM Vision
+  chatbot.py          # OpenAI 兼容聊天机器人（tool calling、OCR 纠错）
   nlp.py              # NLP 后处理（合并图片宽度导致的断行）
   progress.py         # 进度追踪（SQLite）
   utils.py            # 共享工具
@@ -210,6 +221,7 @@ sfacglib/
 
 main.py               # 统一 CLI 入口
 buildozer.spec        # Android APK 构建配置
+.env                  # 配置文件（Cookie、Chatbot API）
 ```
 
 ## 三层抽象
@@ -252,6 +264,29 @@ from sfacglib.fetcher import Fetcher
 f = Fetcher()
 f.import_cookies('paste_your_cookie_string_here')
 "
+```
+
+## Chatbot（OCR 纠错）
+
+在 `.env` 中配置 LLM API：
+
+```env
+CHATBOT_BASE_URL=https://your-api-endpoint/v1
+CHATBOT_API_KEY=your-api-key
+CHATBOT_MODEL=your-model-name
+```
+
+使用：
+
+```bash
+# 交互式聊天（支持 tool calling：读写文件、列表目录）
+uv run python main.py chat
+
+# OCR 纠错单文件
+uv run python main.py ocr-fix input.txt -o corrected.txt
+
+# OCR 纠错目录（批量）
+uv run python main.py ocr-fix ./ocr_output/ --pattern "*.txt" -c "小说类型、角色名等上下文"
 ```
 
 ## CSS 选择器

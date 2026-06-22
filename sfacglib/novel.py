@@ -380,7 +380,8 @@ class Novel(Container):
                             ch_idx += 1
                             chapters.append(NovelChapter(
                                 ch_idx, a.get_text(), mobile_url(href), self.fetcher, self.sel,
-                                self.vip_mode, self.llm_api_key, self.llm_base_url, self.llm_model,
+                                vip_mode=self.vip_mode, llm_api_key=self.llm_api_key,
+                                llm_base_url=self.llm_base_url, llm_model=self.llm_model,
                             ))
                 volumes.append(NovelVolume(vol_idx, vol_title, chapters))
 
@@ -413,114 +414,6 @@ class Novel(Container):
             review_ids.extend(str(item.get('CommentID', '')) for item in cmts if item.get('CommentID'))
             page += 1
         return review_ids
-
-    def _download_vip_items(
-        self,
-        items: list[tuple[Section, Item]],
-        dir_path: Path,
-        ext: str = 'md',
-        pbar=None,
-        lock=None,
-        tracker: ProgressTracker | None = None,
-        task_id: str | None = None,
-    ) -> list[dict]:
-        from .vip import _vip_rate_limit, _validate_gif
-        from urllib.parse import urlparse, parse_qs
-
-        existing_stems = {gif.stem for gif in dir_path.rglob('*.gif')}
-
-        pending_items = []
-        for section, item in items:
-            safe_section = _sanitize_filename(section.title)
-            section_dir = dir_path / f'vol_{section.idx:03d}_{safe_section}'
-            safe_title = _sanitize_filename(item.title)
-            filename = f'ch_{item.idx:03d}_{safe_title}.{ext}' if safe_title else f'ch_{item.idx:03d}.{ext}'
-            save_path = section_dir / filename
-            gif_path = save_path.with_suffix('.gif')
-
-            if gif_path.stem in existing_stems:
-                if tracker and task_id:
-                    tracker.mark_done(task_id, item.url)
-                if pbar and lock:
-                    with lock:
-                        pbar.update(1)
-                continue
-
-            pending_items.append((section, item, save_path))
-
-        if not pending_items:
-            logger.info('所有VIP章节已下载')
-            return []
-
-        logger.info(f'VIP待下载: {len(pending_items)} 章')
-
-        catalog_items = []
-
-        for section, item, save_path in pending_items:
-            gif_path = save_path.with_suffix('.gif')
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-
-            try:
-                _vip_rate_limit()
-                html = self.fetcher.get(item.url, timeout=(10, 20)).text
-                soup = BeautifulSoup(html, 'html.parser')
-
-                vip_img = soup.select_one('#vipImage')
-                if not vip_img:
-                    logger.warning(f'跳过(无订阅): {item.title}')
-                    if tracker and task_id:
-                        tracker.mark_failed(task_id, item.url, 'no subscription')
-                    if pbar and lock:
-                        with lock:
-                            pbar.update(1)
-                    continue
-
-                src = vip_img.get('src', '')
-                if src.startswith('/'):
-                    src = PC_BASE + src
-
-                gif_bytes = self.fetcher.get(src, timeout=(10, 30)).content
-
-                expected_w = int(parse_qs(urlparse(src).query).get('w', [0])[0])
-                valid, info = _validate_gif(gif_bytes, expected_w)
-                if not valid:
-                    raise AntiScrapingError(f'VIP GIF invalid: {info} ({src})')
-
-                gif_path.write_bytes(gif_bytes)
-
-                catalog_items.append({
-                    'section_idx': section.idx,
-                    'section_title': section.title,
-                    'item_idx': item.idx,
-                    'item_title': item.title,
-                    'item_url': item.url,
-                    'file': str(gif_path.relative_to(dir_path)),
-                })
-                if tracker and task_id:
-                    tracker.mark_done(task_id, item.url)
-                logger.info(f'VIP GIF: {gif_path.name} ({len(gif_bytes)} bytes)')
-
-            except AntiScrapingError as e:
-                logger.error(f'反爬检测，停止: {e}')
-                if tracker and task_id:
-                    tracker.mark_failed(task_id, item.url, str(e))
-                raise
-            except Exception as e:
-                err_str = str(e)
-                if 'timeout' in err_str.lower() or 'timed out' in err_str.lower():
-                    logger.error(f'请求超时，停止: {e}')
-                    if tracker and task_id:
-                        tracker.mark_failed(task_id, item.url, f'timeout: {e}')
-                    raise AntiScrapingError(f'Request timeout: {e}')
-                logger.error(f'VIP Failed: {item.title} - {e}')
-                if tracker and task_id:
-                    tracker.mark_failed(task_id, item.url, str(e))
-
-            if pbar and lock:
-                with lock:
-                    pbar.update(1)
-
-        return sorted(catalog_items, key=lambda x: (x['section_idx'], x['item_idx']))
 
     def download_novel(
         self,

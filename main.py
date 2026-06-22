@@ -107,7 +107,6 @@ def cmd_audio(args):
 def cmd_review(args):
     from sfacglib.novel import Novel
     f = _get_fetcher()
-    import re
     nid_match = re.search(r'(\d+)', args.url)
     if not nid_match:
         logger.error('无法提取小说ID')
@@ -173,6 +172,25 @@ def cmd_ocr(args):
         logger.bind(force=True).info(f'Done: {out}')
     else:
         print(text)
+
+
+def cmd_chat(args):
+    from sfacglib.chatbot import interactive_chat
+    interactive_chat()
+
+
+def cmd_ocr_fix(args):
+    from sfacglib.chatbot import ChatBot
+    bot = ChatBot()
+    target = Path(args.target)
+    if target.is_file():
+        out = bot.correct_ocr_file(str(target), args.output or '', args.context)
+        logger.bind(force=True).info(f'Done: {out}')
+    elif target.is_dir():
+        results = bot.correct_ocr_dir(str(target), args.pattern, args.context)
+        logger.bind(force=True).info(f'Done: {len(results)} files corrected')
+    else:
+        logger.error(f'Not found: {target}')
 
 
 def main():
@@ -254,6 +272,16 @@ def main():
     p_ocr.add_argument('--output', '-o', help='Output file path')
     p_ocr.add_argument('--workers', type=int, default=4, help='OCR threads')
     p_ocr.set_defaults(func=cmd_ocr)
+
+    p_chat = sub.add_parser('chat', help='Interactive chat with LLM (tool-calling agent)')
+    p_chat.set_defaults(func=cmd_chat)
+
+    p_ocrfix = sub.add_parser('ocr-fix', help='Correct OCR text using LLM')
+    p_ocrfix.add_argument('target', help='File or directory to correct')
+    p_ocrfix.add_argument('--output', '-o', help='Output file path (single file mode)')
+    p_ocrfix.add_argument('--pattern', default='*.txt', help='File glob pattern for dir mode (default: *.txt)')
+    p_ocrfix.add_argument('--context', '-c', default='', help='Context about the content (genre, names, etc.)')
+    p_ocrfix.set_defaults(func=cmd_ocr_fix)
 
     args = parser.parse_args()
     if not args.command:

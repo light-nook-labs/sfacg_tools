@@ -8,7 +8,7 @@ from loguru import logger
 from .fetcher import Fetcher
 from .selectors import Selectors
 from .config import MOBILE_BASE, URL_AUDIO, AUDIOBOOKS_JSON, WORKERS_AUDIO_CHAPTER
-from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks
+from .utils import sanitize_filename, mobile_url, parse_volume_ul
 from .progress import ProgressTracker, _extract_id
 
 

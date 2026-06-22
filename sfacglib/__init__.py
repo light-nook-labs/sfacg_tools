@@ -41,6 +41,7 @@ from .ocr import (
 )
 from .llm_vision import LLMVision, LLMProvider, create_llm_vision
 from .web_llm_vision import DeepSeekWebOCR, split_by_height, resize_to_max, deduplicate_texts, create_web_llm_vision
+from .chatbot import ChatBot, interactive_chat
 
 __all__ = [
     'Fetcher', 'Auth',
@@ -59,5 +60,6 @@ __all__ = [
     'ocr_gif_with_llm', 'ocr_image_with_llm',
     'LLMVision', 'LLMProvider', 'create_llm_vision',
     'DeepSeekWebOCR', 'split_by_height', 'resize_to_max', 'deduplicate_texts',
+    'ChatBot', 'interactive_chat',
     'VIP_IMAGE_WIDTH', 'OCR_STRIP_HEIGHT', 'OCR_WORKERS', 'OCR_BRIGHTNESS_THRESHOLD',
 ]

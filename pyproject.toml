@@ -9,6 +9,7 @@ dependencies = [
     "ebooklib>=0.20",
     "flet>=0.25.0",
     "loguru>=0.7.3",
+    "openai>=1.0.0",
     "Pillow>=10.0.0",
     "requests>=2.34.2",
     "tqdm>=4.67.0",
@@ -24,4 +25,4 @@ web = [
 ]
 
 [project.scripts]
-sfacg = "app:main"
+sfacg = "main:main"

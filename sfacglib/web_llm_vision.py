@@ -109,7 +109,10 @@ class DeepSeekWebOCR:
             self.page = await self.context.new_page()
 
     async def _close_browser(self):
-        pass
+        if self.context:
+            await self.context.close()
+        if self.playwright:
+            await self.playwright.stop()
 
     async def _navigate_to_deepseek(self):
         await self.page.goto('https://chat.deepseek.com/', wait_until='networkidle', timeout=self.timeout)

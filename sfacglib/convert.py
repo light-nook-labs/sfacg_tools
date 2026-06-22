@@ -113,7 +113,7 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
     if cover_url:
         try:
             book.set_cover('cover.jpg', fetcher.get_binary(cover_url))
-        except:
+        except Exception:
             pass
 
     spine = ['nav']
