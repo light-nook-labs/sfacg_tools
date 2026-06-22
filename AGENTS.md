@@ -66,7 +66,7 @@ buildozer.spec    # Android APK build config
 - Execute tasks via tool calling (OCR, pinyin removal, batch operations)
 - Refuse complex tasks and output CLI commands instead
 
-See [README.md](README.md#agent智能助手) for usage examples.
+See [README.md](README.md#chatbot-agent) for usage examples.
 
 ### Three-Layer Abstraction
 
