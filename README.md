@@ -117,17 +117,12 @@ Agent 可以通过自然语言理解意图，自动执行简单任务：
 - 长时间运行的操作
 
 ```bash
-uv run python main.py chat
-```
+$ uv run python main.py chat
+SFACG Agent ready (mimo-v2.5-pro)
+Type "quit" to exit, "reset" to clear history
 
-```
-You: 把 output/xxx/ch_001.gif 去拼音
-Bot: Done: output/xxx/ch_001_de_pinyin.png (706x5691)
-
-You: 把这个目录所有 GIF 识别成文本
-Bot: Done: output/xxx/ch_001.txt (2239 chars)
-     Done: output/xxx/ch_002.txt (1856 chars)
-     ...
+You: hello
+Bot: 你好！有什么我可以帮助你的吗？
 
 You: output/xxx/ch_091_local_ocr.md 纠错后输出前5行
 Bot: 纠错完成。文件已保存为 ch_091_local_ocr_corrected.md
@@ -140,6 +135,14 @@ Bot: 纠错完成。文件已保存为 ch_091_local_ocr_corrected.md
 
      她握着宋时鸢的澄心剑，用剑尖刺穿了自己心脉，断绝气息，神仙难救。
 
+You: 把 output/xxx/ch_001.gif 去拼音
+Bot: Done: output/xxx/ch_001_de_pinyin.png (706x5691)
+
+You: 把这个目录所有 GIF 识别成文本
+Bot: Done: output/xxx/ch_001.txt (2239 chars)
+     Done: output/xxx/ch_002.txt (1856 chars)
+     ...
+
 You: 下载小说 43708
 Bot: 下载命令：
      uv run python main.py novel 43708
@@ -147,9 +150,6 @@ Bot: 下载命令：
      uv run python main.py novel 43708 -v "第一卷"
      uv run python main.py novel 43708 -sc "第一章" -ec "第十章"
      如需下载 VIP 章节，请先配置 Cookie。
-
-You: hello
-Bot: 你好！有什么我可以帮助你的吗？
 
 You: quit
 ```
