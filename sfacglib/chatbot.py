@@ -5,23 +5,30 @@ from pathlib import Path
 from openai import OpenAI
 from loguru import logger
 
-AGENT_SYSTEM_PROMPT = """你是 SFACG Spider 的智能助手，可以通过自然语言帮助用户完成以下任务：
+AGENT_SYSTEM_PROMPT = """你是 SFACG Spider 的智能助手，可以通过自然语言帮助用户完成任务。
 
-1. **去拼音**：对 VIP GIF 去除拼音注音，生成可阅读的图像
-2. **OCR 识别**：将 GIF 图片识别为文本
-3. **OCR 纠错**：纠正 OCR 文本中的错别字
-4. **格式转换**：漫画目录转换为 HTML/EPUB/PDF
-5. **文件操作**：读写文件、列出目录
-6. **信息查询**：查看目录结构、文件内容
+## 可直接执行的任务（调用工具）
 
-你可以调用工具来执行这些任务。当用户描述一个任务时，分析意图并调用合适的工具。
+- 去拼音：对单个或批量 GIF 去除拼音
+- OCR 识别：将 GIF 识别为文本
+- OCR 纠错：纠正单个或批量文本文件
+- 文件操作：读写文件、列出目录
 
-常用路径规则：
-- GIF 文件通常在 output/ 目录下
-- 输出文件通常保存到同目录，添加 _de_pinyin 或 _corrected 后缀
-- .env 文件包含配置信息
+## 不可执行的任务（输出命令）
 
-回复要简洁，只报告结果。"""
+以下任务复杂或耗时，你应该输出对应命令让用户自己运行：
+
+- 下载小说/漫画/有声：输出 `uv run python main.py novel/comic/audio ...`
+- 格式转换：输出 `uv run python main.py convert ...`
+- 大批量操作（>10 个文件）：输出批量命令或脚本
+- 需要登录的操作：提示用户先配置 Cookie
+- 需要长时间运行的操作：输出命令并说明预计耗时
+
+## 回复规则
+
+- 简洁，只报告结果或输出命令
+- 批量操作前先确认文件数量
+- 遇到错误给出解决建议"""
 
 TOOLS = [
     {
@@ -132,21 +139,6 @@ TOOLS = [
     {
         'type': 'function',
         'function': {
-            'name': 'convert_comic',
-            'description': 'Convert downloaded comic directory to HTML/EPUB/PDF format.',
-            'parameters': {
-                'type': 'object',
-                'properties': {
-                    'dir_path': {'type': 'string', 'description': 'Path to the comic directory'},
-                    'formats': {'type': 'string', 'description': 'Output formats, comma separated (e.g. "html,epub,pdf")'},
-                },
-                'required': ['dir_path'],
-            },
-        },
-    },
-    {
-        'type': 'function',
-        'function': {
             'name': 'batch_remove_pinyin',
             'description': 'Remove pinyin from all GIF files in a directory.',
             'parameters': {
@@ -187,20 +179,6 @@ TOOLS = [
                     'context': {'type': 'string', 'description': 'Optional context about the content'},
                 },
                 'required': ['dir_path'],
-            },
-        },
-    },
-    {
-        'type': 'function',
-        'function': {
-            'name': 'run_command',
-            'description': 'Run a shell command. Use for advanced operations not covered by other tools.',
-            'parameters': {
-                'type': 'object',
-                'properties': {
-                    'command': {'type': 'string', 'description': 'Shell command to run'},
-                },
-                'required': ['command'],
             },
         },
     },
@@ -298,16 +276,12 @@ class ChatBot:
                 return self._tool_correct_ocr(args['text'], args.get('context', ''))
             elif name == 'correct_ocr_file':
                 return self._tool_correct_ocr_file(args['input_path'], args.get('output_path', ''), args.get('context', ''))
-            elif name == 'convert_comic':
-                return self._tool_convert_comic(args['dir_path'], args.get('formats', 'html,epub,pdf'))
             elif name == 'batch_remove_pinyin':
                 return self._tool_batch_remove_pinyin(args['dir_path'], args.get('pattern', '*.gif'))
             elif name == 'batch_ocr':
                 return self._tool_batch_ocr(args['dir_path'], args.get('pattern', '*.gif'))
             elif name == 'batch_correct_ocr':
                 return self._tool_batch_correct_ocr(args['dir_path'], args.get('pattern', '*.txt'), args.get('context', ''))
-            elif name == 'run_command':
-                return self._tool_run_command(args['command'])
             else:
                 return f'Unknown tool: {name}'
         except Exception as e:
@@ -394,15 +368,41 @@ class ChatBot:
         out.write_text(corrected, encoding='utf-8')
         return f'Done: {out} ({len(corrected)} chars)'
 
-    def _tool_convert_comic(self, dir_path: str, formats: str = 'html,epub,pdf') -> str:
-        from .convert import convert_comic
-        from .fetcher import Fetcher
-        f = Fetcher()
-        f.auto_auth()
-        convert_comic(dir_path, formats=formats.split(','), fetcher=f)
-        return f'Done: converted {dir_path} to {formats}'
-
     def _tool_batch_remove_pinyin(self, dir_path: str, pattern: str = '*.gif') -> str:
+        d = Path(dir_path)
+        if not d.exists():
+            return f'Directory not found: {dir_path}'
+        files = sorted(d.rglob(pattern))
+        if not files:
+            return f'No files matching {pattern} in {dir_path}'
+        results = []
+        for i, f in enumerate(files, 1):
+            try:
+                logger.info(f'[{i}/{len(files)}] {f.name}')
+                result = self._tool_remove_pinyin(str(f))
+                results.append(result)
+            except Exception as e:
+                results.append(f'Failed: {f.name} - {e}')
+        return '\n'.join(results)
+
+    def _tool_batch_ocr(self, dir_path: str, pattern: str = '*.gif') -> str:
+        d = Path(dir_path)
+        if not d.exists():
+            return f'Directory not found: {dir_path}'
+        files = sorted(d.rglob(pattern))
+        if not files:
+            return f'No files matching {pattern} in {dir_path}'
+        results = []
+        for i, f in enumerate(files, 1):
+            try:
+                logger.info(f'[{i}/{len(files)}] {f.name}')
+                result = self._tool_ocr_gif(str(f))
+                results.append(result)
+            except Exception as e:
+                results.append(f'Failed: {f.name} - {e}')
+        return '\n'.join(results)
+
+    def _tool_batch_correct_ocr(self, dir_path: str, pattern: str = '*.txt', context: str = '') -> str:
         d = Path(dir_path)
         if not d.exists():
             return f'Directory not found: {dir_path}'
