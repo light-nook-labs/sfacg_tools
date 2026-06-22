@@ -125,8 +125,10 @@ You: hello
 Bot: 你好！有什么我可以帮助你的吗？
 
 You: output/xxx/ch_091_local_ocr.md 纠错后输出前5行
-Bot: 纠错完成。文件已保存为 ch_091_local_ocr_corrected.md
+Bot: 纠错完成。文件已保存为 `ch_091_local_ocr_corrected.md`
 
+     **纠错后前5行：**
+     ```
      ### 第九十章_挫骨扬灰，尸骨无存_（4k5）
 
      小狐妖......死了？！
@@ -134,6 +136,11 @@ Bot: 纠错完成。文件已保存为 ch_091_local_ocr_corrected.md
      宋时鸢发誓要用性命保护的小狐妖......她死了？！
 
      她握着宋时鸢的澄心剑，用剑尖刺穿了自己心脉，断绝气息，神仙难救。
+     ```
+
+     **主要修正：**
+     - `...` → `......` (规范省略号)
+     - `她握着宋时鸢的澄心剑，用剑尖刺穿了自己心脉断绝，气息泯灭` → `她握着宋时鸢的澄心剑，用剑尖刺穿了自己心脉，断绝气息` (调整断句使语义更通顺)
 
 You: 把 output/xxx/ch_001.gif 去拼音
 Bot: Done: output/xxx/ch_001_de_pinyin.png (706x5691)
@@ -143,13 +150,23 @@ Bot: Done: output/xxx/ch_001.txt (2239 chars)
      Done: output/xxx/ch_002.txt (1856 chars)
      ...
 
-You: 下载小说 43708
+You: 下载小说43708
 Bot: 下载命令：
+
+     ```bash
      uv run python main.py novel 43708
+     ```
+
      如需指定卷或章节范围，可加参数：
+     ```bash
+     # 下载指定卷
      uv run python main.py novel 43708 -v "第一卷"
+
+     # 下载指定章节范围
      uv run python main.py novel 43708 -sc "第一章" -ec "第十章"
-     如需下载 VIP 章节，请先配置 Cookie。
+     ```
+
+     如需下载VIP章节，请先配置Cookie。
 
 You: quit
 ```
