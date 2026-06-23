@@ -214,9 +214,11 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
   .print-toc h2 { font-size: 18pt; margin-bottom: 16pt; border-bottom: 2pt solid #333; padding-bottom: 6pt; }
   .print-toc .ptoc-vol { font-size: 12pt; margin-bottom: 6pt; }
   .novel-header .cover { width: 100%; max-width: 100%; margin: 0 auto; }
-  .chapter img { max-width: 80%; }
+  .chapter img { max-width: 80%; break-inside: avoid; page-break-inside: avoid; display: block; margin: 12px auto; }
+  .chapter p { break-inside: avoid; page-break-inside: avoid; }
   .volume > h2 { page-break-before: always; }
-  .chapter { page-break-inside: avoid; }
+  .chapter { break-inside: auto; page-break-inside: auto; }
+  .chapter > h3 { break-after: avoid; page-break-after: avoid; }
   body { font-size: 11pt; line-height: 1.7; }
   a { color: var(--text); text-decoration: none; }
 }
