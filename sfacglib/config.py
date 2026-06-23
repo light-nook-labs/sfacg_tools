@@ -10,6 +10,7 @@ PC_BASE = 'https://book.sfacg.com'
 COMIC_BASE = 'https://mm.sfacg.com'
 COMIC_READER_BASE = 'https://manhua.sfacg.com'
 PASSPORT_BASE = 'https://passport.sfacg.com'
+SEARCH_BASE = 'https://s.sfacg.com'
 
 API_HTML5 = f'{MOBILE_BASE}/API/HTML5.ashx'
 API_COMIC_PICS = f'{COMIC_BASE}/ajax/Common.ashx'
@@ -48,7 +49,7 @@ WORKERS_EPUB_IMG: int = 10
 
 __all__ = [
     'PACKAGE_DIR', 'PROJECT_DIR',
-    'MOBILE_BASE', 'PC_BASE', 'COMIC_BASE', 'COMIC_READER_BASE', 'PASSPORT_BASE',
+    'MOBILE_BASE', 'PC_BASE', 'COMIC_BASE', 'COMIC_READER_BASE', 'PASSPORT_BASE', 'SEARCH_BASE',
     'API_HTML5', 'API_COMIC_PICS', 'API_VIP_IMAGE', 'API_COMIC_VIP',
     'URL_NOVEL_INDEX', 'URL_NOVEL_MENU', 'URL_REVIEW_LIST', 'URL_REVIEW_DETAIL',
     'URL_AUDIO', 'URL_LOGIN_PC', 'URL_LOGIN_API_PC', 'URL_LOGIN_API_MOB', 'URL_CHECK_AUTH',

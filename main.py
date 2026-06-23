@@ -165,6 +165,22 @@ def cmd_web(args):
     run_web(host=args.host, port=args.port)
 
 
+def cmd_search(args):
+    from sfacglib.search import search_novel
+    results = search_novel(args.keyword)
+    if not results:
+        logger.bind(force=True).info('No results found')
+        return
+    for i, r in enumerate(results, 1):
+        print(f'{i:2}. [{r.id}] {r.title}')
+        if r.author:
+            print(f'    Author: {r.author}  Updated: {r.updated}')
+        if r.snippet:
+            print(f'    {r.snippet[:80]}...')
+        print(f'    {r.url}')
+        print()
+
+
 def cmd_ocr(args):
     from sfacglib.ocr_fast import ocr_image
     text = ocr_image(args.source, workers=args.workers)
@@ -283,6 +299,10 @@ def main():
     p_web.add_argument('--host', default='127.0.0.1', help='Host to bind')
     p_web.add_argument('--port', type=int, default=8888, help='Port to bind')
     p_web.set_defaults(func=cmd_web)
+
+    p_search = sub.add_parser('search', help='Search novels by keyword')
+    p_search.add_argument('keyword', help='Search keyword')
+    p_search.set_defaults(func=cmd_search)
 
     p_ocr = sub.add_parser('ocr', help='OCR image to text')
     p_ocr.add_argument('source', help='Image URL or local path')
