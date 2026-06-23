@@ -204,9 +204,9 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 }
 
 /* Print */
-  .print-toc { display: none; }
-  .print-hint { display: none; }
+.print-toc { display: none; }
 @media print {
+  .print-hint { display: none !important; }
   .toc, .toc-toggle, .toc-overlay { display: none !important; }
   .main { margin-left: 0; max-width: 100%; padding: 0; }
   .main-inner { max-width: 100%; }
