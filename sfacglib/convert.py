@@ -133,6 +133,20 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 .toc a:hover { background: #f5f5f4; color: var(--text); }
 .toc a.active { background: #fef3c7; color: var(--accent); font-weight: 600; }
 
+/* TOC collapsible volumes */
+.toc .vol-group { margin-bottom: 2px; }
+.toc .vol-toggle { display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+                   color: var(--text2); font-size: 13px; border-radius: 4px; cursor: pointer;
+                   user-select: none; text-decoration: none; width: 100%; border: none;
+                   background: none; font-family: inherit; text-align: left; }
+.toc .vol-toggle:hover { background: #f5f5f4; color: var(--text); }
+.toc .vol-toggle .arrow { font-size: 10px; transition: transform .2s; flex-shrink: 0;
+                          display: inline-block; width: 12px; }
+.toc .vol-toggle.open .arrow { transform: rotate(90deg); }
+.toc .vol-chapters { display: none; padding-left: 16px; }
+.toc .vol-chapters.open { display: block; }
+.toc .vol-chapters a { font-size: 12px; padding: 3px 8px; }
+
 /* Main content */
 .main { margin-left: var(--toc-w); flex: 1; min-width: 0; padding: 40px 48px 60px; }
 .main-inner { max-width: var(--content-max); margin: 0 auto; }
@@ -220,7 +234,23 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 """]
 
     for sec in sections:
-        html_parts.append(f'<a href="#sec_{sec["idx"]:03d}">{html_escape(sec["title"])}</a>')
+        vol_title = sec['title']
+        vol_display = re.sub(r'^【[^】]+】\s*', '', vol_title)
+        sec_id = f'sec_{sec["idx"]:03d}'
+        ch_items = items_by_sec.get(sec['idx'], [])
+        ch_count = sum(1 for it in ch_items if it.get('item_title'))
+        html_parts.append(f'<div class="vol-group">')
+        if ch_count > 0:
+            html_parts.append(f'<button class="vol-toggle" onclick="this.classList.toggle(\'open\');this.nextElementSibling.classList.toggle(\'open\')"><span class="arrow">&#9654;</span>{html_escape(vol_display)}</button>')
+            html_parts.append(f'<div class="vol-chapters">')
+            for it in ch_items:
+                ch_t = it.get('item_title', '')
+                if ch_t:
+                    html_parts.append(f'<a href="#{sec_id}_{it.get("item_idx", 0):03d}">{html_escape(ch_t)}</a>')
+            html_parts.append('</div>')
+        else:
+            html_parts.append(f'<a href="#{sec_id}" class="vol-toggle" style="display:block">{html_escape(vol_display)}</a>')
+        html_parts.append('</div>')
     html_parts.append('</nav><div class="main"><div class="main-inner">')
 
     html_parts.append('<div class="novel-header">')
@@ -236,14 +266,17 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
         html_parts.append('<div class="warning">本文件使用远程图片URL，链接随时可能失效。</div>')
 
     for sec in sections:
+        vol_title = sec['title']
+        vol_display = re.sub(r'^【[^】]+】\s*', '', vol_title)
         html_parts.append(f'<div class="volume" id="sec_{sec["idx"]:03d}">')
-        html_parts.append(f'<h2>{html_escape(sec["title"])}</h2>')
+        html_parts.append(f'<h2>{html_escape(vol_display)}</h2>')
         for item in items_by_sec.get(sec['idx'], []):
             ch_title = item.get('item_title', '')
+            ch_id = f'sec_{sec["idx"]:03d}_{item.get("item_idx", 0):03d}'
             if ch_title:
-                html_parts.append(f'<div class="chapter"><h3>{html_escape(ch_title)}</h3>')
+                html_parts.append(f'<div class="chapter" id="{ch_id}"><h3>{html_escape(ch_title)}</h3>')
             else:
-                html_parts.append('<div class="chapter">')
+                html_parts.append(f'<div class="chapter" id="{ch_id}">')
 
             if content_type == 'comic':
                 if local_images:
