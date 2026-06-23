@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from html import escape as html_escape
 from loguru import logger
@@ -7,6 +8,23 @@ from .fetcher import Fetcher
 
 _REPO_URL = 'https://github.com/light-nook-labs/sfacg'
 _ORG_AVATAR = 'https://avatars.githubusercontent.com/u/light-nook-labs'
+
+
+def _strip_md(text: str) -> str:
+    lines = text.split('\n')
+    result = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('#'):
+            stripped = re.sub(r'^#{1,6}\s*', '', stripped)
+        if stripped == '---' or stripped == '***' or stripped == '===':
+            result.append('')
+            continue
+        stripped = re.sub(r'\*\*(.+?)\*\*', r'\1', stripped)
+        stripped = re.sub(r'\*(.+?)\*', r'\1', stripped)
+        stripped = re.sub(r'`(.+?)`', r'\1', stripped)
+        result.append(stripped)
+    return '\n'.join(result)
 
 
 def _load_catalog(dir_path: Path) -> dict:
@@ -68,9 +86,7 @@ def _read_item_text(dir_path: Path, item: dict) -> str:
         return ''
     text = path.read_text(encoding='utf-8')
     if path.suffix == '.md':
-        lines = text.split('\n')
-        filtered = [l for l in lines if not l.startswith('# ')]
-        return '\n'.join(filtered)
+        text = _strip_md(text)
     return text
 
 
@@ -244,6 +260,31 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
     return epub_path
 
 
+def _sanitize_for_pdf(text: str) -> str:
+    result = []
+    for ch in text:
+        cp = ord(ch)
+        if cp < 0x20 and ch not in '\n\t':
+            continue
+        if 0xD800 <= cp <= 0xDFFF:
+            continue
+        if cp > 0xFFFF:
+            result.append('?')
+            continue
+        result.append(ch)
+    return ''.join(result)
+
+
+def _register_pdf_fonts():
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    for font in ('STSong-Light', 'HeiseiMin-W3', 'HeiseiKakuGo-W5'):
+        try:
+            pdfmetrics.registerFont(UnicodeCIDFont(font))
+        except Exception:
+            pass
+
+
 def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | None = None):
     try:
         from reportlab.lib.pagesizes import A4
@@ -254,7 +295,7 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Image as RLImage
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import cm
-        pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+        _register_pdf_fonts()
     except ImportError:
         logger.error('需要安装 reportlab: uv add reportlab')
         return None
@@ -332,11 +373,12 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
                 from io import BytesIO
                 cover_data = fetcher.get_binary(cover_url)
                 cover_img = RLImage(BytesIO(cover_data))
-                max_w = width - 5*cm
-                max_h = height - 5*cm
+                max_w = width - 2*cm
+                max_h = height - 2*cm
                 scale = min(max_w / cover_img.drawWidth, max_h / cover_img.drawHeight, 1)
                 cover_img.drawWidth *= scale
                 cover_img.drawHeight *= scale
+                story.append(Spacer(1, (height - cover_img.drawHeight) / 2 - 2*cm))
                 story.append(cover_img)
                 story.append(PageBreak())
             except Exception as e:
@@ -375,8 +417,32 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
                     if text:
                         for para in text.split('\n'):
                             para = para.strip()
-                            if para:
-                                story.append(Paragraph(html_escape(para), styles['CNBody']))
+                            if not para:
+                                story.append(Spacer(1, 6))
+                                continue
+                            img_match = re.match(r'!\[([^\]]*)\]\(([^)]+)\)', para)
+                            if img_match:
+                                img_url = img_match.group(2)
+                                if img_url.startswith('http'):
+                                    logger.debug(f'跳过远程图片: {img_url}')
+                                    continue
+                                try:
+                                    img = RLImage(str(dir_path / img_url))
+                                    max_w = width - 5*cm
+                                    max_h = height - 8*cm
+                                    if img.drawWidth > 0 and img.drawHeight > 0:
+                                        scale = min(max_w / img.drawWidth, max_h / img.drawHeight, 1)
+                                        img.drawWidth *= scale
+                                        img.drawHeight *= scale
+                                        story.append(img)
+                                        story.append(Spacer(1, 6))
+                                except Exception as e:
+                                    logger.debug(f'图片跳过: {img_url} ({e})')
+                                continue
+                            safe = _sanitize_for_pdf(para)
+                            safe = html_escape(safe)
+                            if safe.strip():
+                                story.append(Paragraph(safe, styles['CNBody']))
 
         doc.build(story)
 
