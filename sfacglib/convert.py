@@ -1,9 +1,12 @@
 import json
 from pathlib import Path
-from bs4 import BeautifulSoup
+from html import escape as html_escape
 from loguru import logger
 from .base import _sanitize_filename
 from .fetcher import Fetcher
+
+_REPO_URL = 'https://github.com/light-nook-labs/sfacg'
+_ORG_AVATAR = 'https://avatars.githubusercontent.com/u/light-nook-labs'
 
 
 def _load_catalog(dir_path: Path) -> dict:
@@ -15,24 +18,60 @@ def _load_catalog(dir_path: Path) -> dict:
 
 def _get_sections(catalog: dict) -> list[dict]:
     sections = catalog.get('sections', [])
-    if not sections:
-        sec_map: dict[int, dict] = {}
-        for item in catalog.get('items', []):
-            idx = item.get('section_idx', 0)
-            if idx not in sec_map:
-                sec_map[idx] = {'idx': idx, 'title': item.get('section_title', '')}
-        sections = sorted(sec_map.values(), key=lambda x: x['idx'])
-    return sections
+    if sections:
+        return sections
+
+    volumes = catalog.get('volumes', {})
+    if isinstance(volumes, dict) and volumes:
+        return [{'idx': idx, 'title': title} for title, idx in sorted(volumes.items(), key=lambda x: x[1])]
+
+    items_key = 'items' if 'items' in catalog else 'chapters'
+    items = catalog.get(items_key, [])
+    sec_map: dict[int, dict] = {}
+    for item in items:
+        idx = item.get('section_idx', 0)
+        if idx not in sec_map:
+            sec_map[idx] = {'idx': idx, 'title': item.get('section_title', '')}
+    return sorted(sec_map.values(), key=lambda x: x['idx'])
 
 
 def _get_items_by_section(catalog: dict) -> dict[int, list]:
+    items_key = 'items' if 'items' in catalog else 'chapters'
     result: dict[int, list] = {}
-    for item in catalog.get('items', []):
+    for item in catalog.get(items_key, []):
         sec_idx = item.get('section_idx', 0)
         if sec_idx not in result:
             result[sec_idx] = []
         result[sec_idx].append(item)
     return result
+
+
+def _detect_content_type(dir_path: Path, items: list[dict]) -> str:
+    for item in items[:5]:
+        f = item.get('file', '')
+        if not f:
+            continue
+        ext = Path(f).suffix.lower()
+        if ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+            return 'comic'
+        if ext in ('.md', '.txt'):
+            return 'novel'
+    return 'novel'
+
+
+def _read_item_text(dir_path: Path, item: dict) -> str:
+    f = item.get('file', '')
+    if not f:
+        return ''
+    path = dir_path / f
+    if not path.exists():
+        return ''
+    text = path.read_text(encoding='utf-8')
+    if path.suffix == '.md':
+        lines = text.split('\n')
+        filtered = [l for l in lines if not l.startswith('# ')]
+        return '\n'.join(filtered)
+    return text
 
 
 def convert_to_html(dir_path: str | Path, local_images: bool = True):
@@ -41,18 +80,22 @@ def convert_to_html(dir_path: str | Path, local_images: bool = True):
     sections = _get_sections(catalog)
     items_by_sec = _get_items_by_section(catalog)
     title = catalog.get('title', dir_path.name)
+    all_items = catalog.get('items', [])
+    content_type = _detect_content_type(dir_path, all_items)
 
     html_parts = [f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>{title}</title>
+<title>{html_escape(title)}</title>
 <style>
-body {{ font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
+body {{ font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; line-height: 1.8; }}
 h1 {{ text-align: center; color: #333; }}
-h2 {{ color: #666; border-bottom: 2px solid #ddd; padding-bottom: 10px; }}
+h2 {{ color: #666; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }}
+h3 {{ color: #444; margin-top: 30px; }}
 .chapter {{ margin-bottom: 40px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
 img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
+p {{ text-indent: 2em; margin: 0.5em 0; }}
 .toc {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
 .toc a {{ display: block; padding: 8px; color: #0066cc; text-decoration: none; }}
 .toc a:hover {{ background: #f0f0f0; }}
@@ -60,28 +103,42 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
 </style>
 </head>
 <body>
-<h1>{title}</h1>
+<h1>{html_escape(title)}</h1>
 """]
 
-    if not local_images:
-        html_parts.append('<div class="warning">⚠️ 本文件使用远程图片URL，链接随时可能失效。</div>')
+    if content_type == 'comic' and not local_images:
+        html_parts.append('<div class="warning">本文件使用远程图片URL，链接随时可能失效。</div>')
 
     html_parts.append('<div class="toc"><h2>目录</h2>')
     for sec in sections:
-        html_parts.append(f'<a href="#ch_{sec["idx"]:03d}">{sec["title"]}</a>')
+        html_parts.append(f'<a href="#sec_{sec["idx"]:03d}">{html_escape(sec["title"])}</a>')
     html_parts.append('</div>')
 
     for sec in sections:
-        html_parts.append(f'<div class="chapter" id="ch_{sec["idx"]:03d}">')
-        html_parts.append(f'<h2>{sec["title"]}</h2>')
+        html_parts.append(f'<div class="chapter" id="sec_{sec["idx"]:03d}">')
+        html_parts.append(f'<h2>{html_escape(sec["title"])}</h2>')
         for item in items_by_sec.get(sec['idx'], []):
-            if local_images:
-                src = item.get('file', '')
+            if content_type == 'comic':
+                if local_images:
+                    src = item.get('file', '')
+                else:
+                    src = item.get('item_url', '')
+                html_parts.append(f'<img src="{html_escape(src)}" alt="" loading="lazy">')
             else:
-                src = item.get('item_url', '')
-            html_parts.append(f'<img src="{src}" alt="" loading="lazy">')
+                text = _read_item_text(dir_path, item)
+                if text:
+                    ch_title = item.get('item_title', '')
+                    if ch_title:
+                        html_parts.append(f'<h3>{html_escape(ch_title)}</h3>')
+                    for para in text.split('\n'):
+                        para = para.strip()
+                        if para:
+                            html_parts.append(f'<p>{html_escape(para)}</p>')
         html_parts.append('</div>')
 
+    html_parts.append(f'''<div class="chapter" style="text-align:center; color:#999; font-size:12px; margin-top:60px; padding-top:20px; border-top:1px solid #ddd;">
+<p>Generated by <a href="{_REPO_URL}" style="color:#666;">SFACG Spider</a></p>
+</div>''')
     html_parts.append('</body></html>')
 
     html_file = dir_path / f'{_sanitize_filename(title)}.html'
@@ -102,12 +159,17 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
     sections = _get_sections(catalog)
     items_by_sec = _get_items_by_section(catalog)
     title = catalog.get('title', dir_path.name)
+    author = catalog.get('author', '')
+    all_items = catalog.get('items', [])
+    content_type = _detect_content_type(dir_path, all_items)
     fetcher = fetcher or Fetcher()
 
     book = epub.EpubBook()
     book.set_identifier(str(dir_path))
     book.set_title(title)
     book.set_language('zh')
+    if author:
+        book.add_author(author)
 
     cover_url = catalog.get('cover', '')
     if cover_url:
@@ -115,6 +177,12 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
             book.set_cover('cover.jpg', fetcher.get_binary(cover_url))
         except Exception as e:
             logger.warning(f'封面下载失败: {e}')
+
+    css = epub.EpubItem(
+        uid='style', file_name='style/default.css', media_type='text/css',
+        content=b'body { font-family: serif; line-height: 1.8; } h2 { margin-top: 2em; } p { text-indent: 2em; margin: 0.3em 0; }',
+    )
+    book.add_item(css)
 
     spine = ['nav']
     toc = []
@@ -124,24 +192,37 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
         if not ch_items:
             continue
 
-        ch_html = f'<h2>{sec["title"]}</h2>'
-        for item in ch_items:
-            img_path = dir_path / item.get('file', '')
-            if img_path.exists():
-                img_data = img_path.read_bytes()
-                fname = f'img_{sec["idx"]:03d}_{item.get("item_idx", 0):03d}{img_path.suffix}'
-                suffix = img_path.suffix.lower()
-                media_type = {
-                    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-                    '.png': 'image/png', '.gif': 'image/gif',
-                    '.webp': 'image/webp',
-                }.get(suffix, 'image/jpeg')
-                book.add_item(epub.EpubImage(
-                    file_name=f'images/{fname}',
-                    media_type=media_type,
-                    content=img_data,
-                ))
-                ch_html += f'<img src="images/{fname}" alt="">'
+        ch_html = f'<h2>{html_escape(sec["title"])}</h2>'
+
+        if content_type == 'comic':
+            for item in ch_items:
+                img_path = dir_path / item.get('file', '')
+                if img_path.exists():
+                    img_data = img_path.read_bytes()
+                    fname = f'img_{sec["idx"]:03d}_{item.get("item_idx", 0):03d}{img_path.suffix}'
+                    suffix = img_path.suffix.lower()
+                    media_type = {
+                        '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                        '.png': 'image/png', '.gif': 'image/gif',
+                        '.webp': 'image/webp',
+                    }.get(suffix, 'image/jpeg')
+                    book.add_item(epub.EpubImage(
+                        file_name=f'images/{fname}',
+                        media_type=media_type,
+                        content=img_data,
+                    ))
+                    ch_html += f'<img src="images/{fname}" alt="">'
+        else:
+            for item in ch_items:
+                text = _read_item_text(dir_path, item)
+                if text:
+                    ch_title = item.get('item_title', '')
+                    if ch_title:
+                        ch_html += f'<h3>{html_escape(ch_title)}</h3>'
+                    for para in text.split('\n'):
+                        para = para.strip()
+                        if para:
+                            ch_html += f'<p>{html_escape(para)}</p>'
 
         page = epub.EpubHtml(
             title=sec['title'],
@@ -149,9 +230,19 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
             lang='zh',
             content=ch_html,
         )
+        page.add_item(css)
         book.add_item(page)
         spine.append(page)
         toc.append(page)
+
+    colophon = epub.EpubHtml(
+        title='关于',
+        file_name='colophon.xhtml',
+        lang='zh',
+        content=f'<div style="text-align:center; color:#999; font-size:12px; margin-top:2em;"><p>Generated by <a href="{_REPO_URL}">SFACG Spider</a></p></div>',
+    )
+    book.add_item(colophon)
+    spine.append(colophon)
 
     book.toc = toc
     book.add_item(epub.EpubNcx())
@@ -171,6 +262,9 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0):
         from reportlab.lib.utils import ImageReader
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Image as RLImage
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import cm
         pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
     except ImportError:
         logger.error('需要安装 reportlab: uv add reportlab')
@@ -181,48 +275,116 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0):
     sections = _get_sections(catalog)
     items_by_sec = _get_items_by_section(catalog)
     title = catalog.get('title', dir_path.name)
+    all_items = catalog.get('items', [])
+    content_type = _detect_content_type(dir_path, all_items)
 
     pdf_path = dir_path / f'{_sanitize_filename(title)}.pdf'
-    c = canvas.Canvas(str(pdf_path), pagesize=A4)
     width, height = A4
 
-    for sec in sections:
-        ch_items = items_by_sec.get(sec['idx'], [])
-        if not ch_items:
-            continue
+    if content_type == 'comic':
+        c = canvas.Canvas(str(pdf_path), pagesize=A4)
+        for sec in sections:
+            ch_items = items_by_sec.get(sec['idx'], [])
+            if not ch_items:
+                continue
+            c.setFont('STSong-Light', 16)
+            c.drawCentredString(width / 2, height - 50, sec['title'])
+            c.showPage()
+            for item in ch_items:
+                img_path = dir_path / item.get('file', '')
+                if img_path.exists():
+                    try:
+                        img = ImageReader(str(img_path))
+                        img_width, img_height = img.getSize()
+                        usable_width = width - 2 * padding
+                        usable_height = height - 2 * padding
+                        scale = min(usable_width / img_width, usable_height / img_height)
+                        draw_width = img_width * scale
+                        draw_height = img_height * scale
+                        x = (width - draw_width) / 2
+                        y = (height - draw_height) / 2
+                        c.drawImage(img, x, y, draw_width, draw_height)
+                        c.showPage()
+                    except Exception as e:
+                        logger.warning(f'图片处理失败: {e}')
+        c.setFont('STSong-Light', 10)
+        c.drawCentredString(width / 2, 50, f'Generated by SFACG Spider - {_REPO_URL}')
+        c.save()
+    else:
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(
+            name='CNBody', fontName='STSong-Light', fontSize=11,
+            leading=20, firstLineIndent=22, spaceAfter=6,
+        ))
+        styles.add(ParagraphStyle(
+            name='CNTitle', fontName='STSong-Light', fontSize=20,
+            leading=28, alignment=1, spaceAfter=20,
+        ))
+        styles.add(ParagraphStyle(
+            name='CNVolume', fontName='STSong-Light', fontSize=16,
+            leading=24, spaceBefore=30, spaceAfter=12,
+        ))
+        styles.add(ParagraphStyle(
+            name='CNChapter', fontName='STSong-Light', fontSize=13,
+            leading=20, spaceBefore=20, spaceAfter=10,
+        ))
 
-        c.setFont('STSong-Light', 16)
-        c.drawCentredString(width / 2, height - 50, sec['title'])
-        c.showPage()
+        doc = SimpleDocTemplate(
+            str(pdf_path), pagesize=A4,
+            leftMargin=2.5*cm, rightMargin=2.5*cm,
+            topMargin=2.5*cm, bottomMargin=2.5*cm,
+        )
 
-        for item in ch_items:
-            img_path = dir_path / item.get('file', '')
-            if img_path.exists():
-                try:
-                    img = ImageReader(str(img_path))
-                    img_width, img_height = img.getSize()
+        story = []
+        story.append(Paragraph(html_escape(title), styles['CNTitle']))
+        story.append(Spacer(1, 20))
 
-                    usable_width = width - 2 * padding
-                    usable_height = height - 2 * padding
+        for sec in sections:
+            story.append(PageBreak())
+            story.append(Paragraph(html_escape(sec['title']), styles['CNVolume']))
+            story.append(Spacer(1, 10))
 
-                    scale = min(usable_width / img_width, usable_height / img_height)
-                    draw_width = img_width * scale
-                    draw_height = img_height * scale
+            for item in items_by_sec.get(sec['idx'], []):
+                ch_title = item.get('item_title', '')
+                if ch_title:
+                    story.append(Paragraph(html_escape(ch_title), styles['CNChapter']))
 
-                    x = (width - draw_width) / 2
-                    y = (height - draw_height) / 2
+                if content_type == 'comic':
+                    img_path = dir_path / item.get('file', '')
+                    if img_path.exists():
+                        try:
+                            max_w = width - 5*cm
+                            max_h = height - 5*cm
+                            img = RLImage(str(img_path))
+                            img_w, img_h = img.drawWidth, img.drawHeight
+                            scale = min(max_w / img_w, max_h / img_h, 1)
+                            img.drawWidth = img_w * scale
+                            img.drawHeight = img_h * scale
+                            story.append(img)
+                            story.append(Spacer(1, 10))
+                        except Exception as e:
+                            logger.warning(f'图片处理失败: {e}')
+                else:
+                    text = _read_item_text(dir_path, item)
+                    if text:
+                        for para in text.split('\n'):
+                            para = para.strip()
+                            if para:
+                                story.append(Paragraph(html_escape(para), styles['CNBody']))
 
-                    c.drawImage(img, x, y, draw_width, draw_height)
-                    c.showPage()
-                except Exception as e:
-                    logger.warning(f'图片处理失败: {e}')
+        story.append(PageBreak())
+        story.append(Spacer(1, 200))
+        story.append(Paragraph(
+            f'Generated by <a href="{_REPO_URL}">SFACG Spider</a>',
+            styles['CNBody'],
+        ))
+        doc.build(story)
 
-    c.save()
     logger.bind(force=True).info(f'PDF: {pdf_path}')
     return pdf_path
 
 
-def convert_comic(dir_path: str | Path, formats: list[str] | None = None, fetcher: Fetcher | None = None, padding: int = 0):
+def convert(dir_path: str | Path, formats: list[str] | None = None, fetcher: Fetcher | None = None, padding: int = 0):
     if formats is None:
         formats = ['html', 'epub', 'pdf']
 
@@ -238,3 +400,6 @@ def convert_comic(dir_path: str | Path, formats: list[str] | None = None, fetche
             logger.warning(f'不支持的格式: {fmt}')
 
     return results
+
+
+convert_comic = convert
