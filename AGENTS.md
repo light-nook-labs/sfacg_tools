@@ -83,7 +83,13 @@ Cookie validation uses `passport.sfacg.com/Ajax/GetLoginInfo.ashx` API (not HTML
 
 ### VIP Chapter Processing
 
-VIP chapters detected via `.icn_vip` badge. Downloaded as `.gif` files, OCR is a separate step. See [README.md](README.md#vip-章节) for OCR workflow and performance comparison.
+VIP chapters have two types:
+- **Encrypted VIP**: No icon in catalog, downloaded as `.gif`, requires OCR
+- **Image VIP**: Has `<span class="icn">\ue905;</span>` icon in catalog, downloaded as `.md` with embedded images
+
+Detection: `get_sections()` in `novel.py` checks for `\ue905` character in `.icn` span. VIP GIF download constructs URL directly from chapter ID (no HTML parsing), includes `Referer` header.
+
+See [README.md](README.md#vip-章节与-ocr) for OCR workflow and performance comparison.
 
 ### Format Conversion
 

@@ -8,34 +8,33 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from .fetcher import Fetcher
 from .selectors import Selectors
-from .ch import Chapter, PCChapter, VipMode, _validate_gif
+from .ch import Chapter, PCChapter, _validate_gif
 from .base import Container, Section, Item, _sanitize_filename, AntiScrapingError
 from .config import (
     URL_NOVEL_INDEX, URL_NOVEL_MENU, MOBILE_BASE, PC_BASE, WORKERS_CHAPTER,
-    URL_REVIEW_LIST, URL_REVIEW_DETAIL, API_HTML5, API_VIP_IMAGE, VIP_IMAGE_WIDTH, VIP_TIMEOUT,
+    URL_REVIEW_LIST, URL_REVIEW_DETAIL, API_HTML5, API_VIP_IMAGE, VIP_IMAGE_WIDTH,
 )
 from .progress import ProgressTracker, _extract_id
 from .utils import parse_volume_ul, mobile_url, fix_url_protocol
 from .models import Catalog, CatalogSection, CatalogItem
 
+ICN_IMG = '\ue905'
+
 
 class NovelChapter(Item):
 
     def __init__(self, idx: int, title: str, url: str, fetcher: Fetcher, sel: Selectors,
-                 vip: bool = False, vip_mode=VipMode.OCR, llm_api_key='', llm_base_url='', llm_model='',
-                 pw_page=None):
+                 nid: str = '', vip: bool = False):
         super().__init__(idx, title, url)
         self.fetcher = fetcher
         self.sel = sel
+        self.nid = nid
         self.vip = vip
-        self.vip_mode = vip_mode
-        self.llm_api_key = llm_api_key
-        self.llm_base_url = llm_base_url
-        self.llm_model = llm_model
-        self._pw_page = pw_page
 
     def download(self, save_path: Path, pbar=None, lock=None):
-        if self.vip:
+        if save_path.exists() or save_path.with_suffix('.gif').exists():
+            logger.debug(f'Skip existing: {save_path.name}')
+        elif self.vip:
             self._download_vip_gif(save_path)
         else:
             self._download_normal(save_path)
@@ -49,27 +48,16 @@ class NovelChapter(Item):
         save_path.write_text(md, encoding='utf-8')
 
     def _download_vip_gif(self, save_path: Path):
-        from urllib.parse import urlparse, parse_qs
-
-        html = self.fetcher.get(self.url, timeout=VIP_TIMEOUT).text
-        soup = BeautifulSoup(html, 'html.parser')
-
-        vip_img = soup.select_one('#vipImage')
-        if not vip_img:
-            raise ValueError(f'No #vipImage (no subscription): {self.url}')
-
-        src = vip_img.get('src', '')
-        if src.startswith('/'):
-            src = PC_BASE + src
-
-        gif_bytes = self.fetcher.get(src, timeout=(10, 30)).content
-
-        expected_w = int(parse_qs(urlparse(src).query).get('w', [0])[0])
-        valid, info = _validate_gif(gif_bytes, expected_w)
-        if not valid:
-            raise AntiScrapingError(f'VIP GIF invalid: {info} ({src})')
-
         gif_path = save_path.with_suffix('.gif')
+        cid = _extract_id(self.url)
+        src = f'{API_VIP_IMAGE}?op=getChapPic&tp=true&quick=true&cid={cid}&nid={self.nid}&font=16&lang=&w={VIP_IMAGE_WIDTH}'
+
+        gif_bytes = self.fetcher.get(src, headers={'Referer': self.url}, timeout=(10, 30)).content
+
+        valid, info = _validate_gif(gif_bytes, VIP_IMAGE_WIDTH)
+        if not valid:
+            raise ValueError(f'VIP GIF invalid (not subscribed?): {info} ({self.url})')
+
         gif_path.write_bytes(gif_bytes)
         logger.info(f'VIP GIF: {gif_path.name} ({len(gif_bytes)} bytes)')
 
@@ -162,6 +150,73 @@ class ReviewSection(Section):
         return self.comments
 
 
+def _parse_pc_catalog(soup: BeautifulSoup, fetcher: Fetcher, sel: Selectors, nid: str) -> list[NovelVolume]:
+    volumes: list[NovelVolume] = []
+    vol_idx = 0
+
+    for hd in soup.select('.catalog-hd'):
+        vol_idx += 1
+        vol_title_tag = hd.select_one('.catalog-title')
+        vol_title = vol_title_tag.get_text().strip() if vol_title_tag else '未命名卷'
+        chapters: list[NovelChapter] = []
+        ch_idx = 0
+
+        for sib in hd.next_siblings:
+            if not hasattr(sib, 'name') or not sib.name:
+                continue
+            if 'catalog-hd' in str(sib.get('class', '')):
+                break
+            if 'catalog-list' not in str(sib.get('class', '')):
+                continue
+
+            for a in sib.select('a[href]'):
+                href = a.get('href', '')
+                if not href:
+                    continue
+                ch_idx += 1
+                is_vip = a.select_one('.icn_vip') is not None
+                has_img = a.select_one('.icn') and a.select_one('.icn').get_text() == ICN_IMG
+                title = a.get('title', '') or a.get_text().replace('VIP', '').strip()
+
+                if href.startswith('/'):
+                    url = f'{PC_BASE}{href}'
+                else:
+                    url = mobile_url(href)
+
+                chapters.append(NovelChapter(
+                    ch_idx, title, url, fetcher, sel,
+                    nid=nid, vip=is_vip and not has_img,
+                ))
+
+        volumes.append(NovelVolume(vol_idx, vol_title, chapters))
+
+    return volumes
+
+
+def _parse_mobile_catalog(soup: BeautifulSoup, fetcher: Fetcher, sel: Selectors, nid: str) -> list[NovelVolume]:
+    volumes: list[NovelVolume] = []
+    vol_idx = 0
+
+    for vol_tag in soup.find_all(class_='mulu'):
+        vol_idx += 1
+        vol_title = vol_tag.string or '未命名卷'
+        chapters: list[NovelChapter] = []
+        ul_tag = parse_volume_ul(vol_tag)
+        if ul_tag:
+            ch_idx = 0
+            for a in ul_tag.find_all('a'):
+                href = a.get('href', '')
+                if href:
+                    ch_idx += 1
+                    chapters.append(NovelChapter(
+                        ch_idx, a.get_text(), mobile_url(href), fetcher, sel,
+                        nid=nid,
+                    ))
+        volumes.append(NovelVolume(vol_idx, vol_title, chapters))
+
+    return volumes
+
+
 class Novel(Container):
 
     def __init__(
@@ -169,10 +224,6 @@ class Novel(Container):
         nid: int,
         fetcher: Fetcher | None = None,
         selectors: Selectors | None = None,
-        vip_mode: VipMode = VipMode.OCR,
-        llm_api_key: str = '',
-        llm_base_url: str = '',
-        llm_model: str = '',
     ):
         super().__init__(fetcher)
         self.nid = str(nid)
@@ -182,11 +233,7 @@ class Novel(Container):
         self.intro: str = ''
         self.cover: str = ''
         self.sel = selectors or Selectors()
-        self.vip_mode = vip_mode
-        self._pc_soup = None
-        self.llm_api_key = llm_api_key
-        self.llm_base_url = llm_base_url
-        self.llm_model = llm_model
+        self.fetcher.auto_auth()
 
     def get_info(self) -> tuple[str, str]:
         index_url = f'{URL_NOVEL_INDEX}{self.nid}'
@@ -281,74 +328,13 @@ Generated by [SFACG Spider](https://github.com/light-nook-labs/sfacg)
         html = self.fetcher.get_html(pc_url)
         soup = BeautifulSoup(html, 'html.parser')
 
-        catalog_hds = soup.select('.catalog-hd')
-        if catalog_hds:
-            self._pc_soup = soup
-        else:
-            menu_url = f'{URL_NOVEL_MENU}{self.nid}'
-            html = self.fetcher.get_html(menu_url)
-            soup = BeautifulSoup(html, 'html.parser')
-            catalog_hds = self.sel.find_all(soup, 'novel_menu', 'volume_tags', url=menu_url, required=False)
-            if not catalog_hds:
-                catalog_hds = soup.find_all(class_='mulu')
-            self._pc_soup = None
+        if soup.select('.catalog-hd'):
+            return _parse_pc_catalog(soup, self.fetcher, self.sel, self.nid)
 
-        volumes: list[NovelVolume] = []
-        vol_idx = 0
-
-        if self._pc_soup:
-            for hd in catalog_hds:
-                vol_idx += 1
-                vol_title_tag = hd.select_one('.catalog-title')
-                vol_title = vol_title_tag.get_text().strip() if vol_title_tag else '未命名卷'
-                chapters: list[NovelChapter] = []
-                ch_idx = 0
-                for sib in hd.next_siblings:
-                    if not hasattr(sib, 'name') or not sib.name:
-                        continue
-                    if 'catalog-hd' in str(sib.get('class', '')):
-                        break
-                    if 'catalog-list' in str(sib.get('class', '')):
-                        for a in sib.select('a[href]'):
-                            href = a.get('href', '')
-                            if not href:
-                                continue
-                            ch_idx += 1
-                            is_vip = a.select_one('.icn_vip') is not None
-                            title = a.get('title', '') or a.get_text().replace('VIP', '').strip()
-                            if is_vip and '/vip/' in href:
-                                url = f'{PC_BASE}{href}'
-                            elif href.startswith('/'):
-                                url = f'{PC_BASE}{href}'
-                            else:
-                                url = mobile_url(href)
-                            chapters.append(NovelChapter(
-                                ch_idx, title, url, self.fetcher, self.sel,
-                                vip=is_vip,
-                                vip_mode=self.vip_mode, llm_api_key=self.llm_api_key,
-                                llm_base_url=self.llm_base_url, llm_model=self.llm_model,
-                            ))
-                volumes.append(NovelVolume(vol_idx, vol_title, chapters))
-        else:
-            for vol_tag in catalog_hds:
-                vol_idx += 1
-                vol_title = vol_tag.string or '未命名卷'
-                chapters: list[NovelChapter] = []
-                ul_tag = parse_volume_ul(vol_tag)
-                if ul_tag:
-                    ch_idx = 0
-                    for a in ul_tag.find_all('a'):
-                        href = a.get('href', '')
-                        if href:
-                            ch_idx += 1
-                            chapters.append(NovelChapter(
-                                ch_idx, a.get_text(), mobile_url(href), self.fetcher, self.sel,
-                                vip_mode=self.vip_mode, llm_api_key=self.llm_api_key,
-                                llm_base_url=self.llm_base_url, llm_model=self.llm_model,
-                            ))
-                volumes.append(NovelVolume(vol_idx, vol_title, chapters))
-
-        return volumes
+        menu_url = f'{URL_NOVEL_MENU}{self.nid}'
+        html = self.fetcher.get_html(menu_url)
+        soup = BeautifulSoup(html, 'html.parser')
+        return _parse_mobile_catalog(soup, self.fetcher, self.sel, self.nid)
 
     def _get_reviews(self) -> ReviewSection:
         review_ids = self._get_review_ids()
@@ -377,109 +363,6 @@ Generated by [SFACG Spider](https://github.com/light-nook-labs/sfacg)
             review_ids.extend(str(item.get('CommentID', '')) for item in cmts if item.get('CommentID'))
             page += 1
         return review_ids
-
-    def download_novel(
-        self,
-        path: str | Path = './',
-        file_type: str = 'md',
-        tracker: ProgressTracker | None = None,
-        start_chapter: str | None = None,
-        end_chapter: str | None = None,
-        chapter_range: str | None = None,
-        volume_filter: str | None = None,
-        download_reviews: bool = False,
-    ):
-        path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
-
-        if file_type not in ('txt', 'md', 'html', 'epub'):
-            logger.error(f'不支持的格式: {file_type}')
-            return
-
-        primary_type = 'md' if file_type == 'epub' else file_type
-        ext = primary_type
-
-        sections = self.get_sections()
-        all_items = self._filter_items(sections, start_chapter, end_chapter, chapter_range, volume_filter)
-
-        if download_reviews:
-            review_section = self._get_reviews()
-            for item in review_section.get_items():
-                all_items.append((review_section, item))
-
-        if not all_items:
-            logger.error('没有可下载的内容')
-            return
-
-        if tracker is None:
-            tracker = ProgressTracker()
-
-        normal_items = [(s, i) for s, i in all_items if not getattr(i, 'vip', False)]
-        vip_items = [(s, i) for s, i in all_items if getattr(i, 'vip', False)]
-
-        logger.bind(force=True).info(f'共 {len(all_items)} 项 (普通 {len(normal_items)}, VIP {len(vip_items)})')
-
-        info_md, info_html = self.get_info()
-        item_list = [{'url': i.url, 'title': i.title} for _, i in all_items]
-        task_id = tracker.create_task('novel', self.title, self.nid, '', chapters=item_list)
-
-        dir_path = path / _sanitize_filename(self.title)
-        dir_path.mkdir(parents=True, exist_ok=True)
-
-        existing_stems = set()
-        for f in dir_path.rglob('*.md'):
-            existing_stems.add(f.stem)
-        for f in dir_path.rglob('*.gif'):
-            existing_stems.add(f.stem)
-
-        for section, item in all_items:
-            safe_section = _sanitize_filename(section.title)
-            section_dir = dir_path / f'vol_{section.idx:03d}_{safe_section}'
-            safe_title = _sanitize_filename(item.title)
-            ext_check = 'gif' if getattr(item, 'vip', False) else 'md'
-            filename = f'ch_{item.idx:03d}_{safe_title}.{ext_check}' if safe_title else f'ch_{item.idx:03d}.{ext_check}'
-            stem = Path(filename).stem
-            if stem in existing_stems:
-                if tracker:
-                    tracker.mark_done(task_id, item.url)
-
-        lock = threading.Lock()
-        pbar = tqdm(total=len(all_items), desc=self.title, unit='task')
-
-        catalog = Catalog(
-            id=self.nid,
-            title=self.title,
-            author=self.author,
-            cover=self.cover,
-            intro=self.intro,
-        )
-
-        catalog.sections = self._download_items(all_items, dir_path, ext, 'vol', 'ch', pbar, lock, tracker, task_id)
-
-        pbar.close()
-
-        catalog.save(dir_path / 'catalog.json')
-
-        if ext == 'html':
-            (dir_path / 'info.html').write_text(info_html, encoding='utf-8')
-        else:
-            (dir_path / 'info.md').write_text(info_md, encoding='utf-8')
-
-        if tracker and task_id:
-            tracker.finalize_task(task_id)
-
-        if file_type in ('txt', 'md'):
-            single_content = self.assemble(dir_path, primary_type)
-            single_path = path / f'{_sanitize_filename(self.title)}.{file_type}'
-            single_path.write_text(single_content, encoding='utf-8')
-            logger.bind(force=True).info(f'保存到 {single_path}')
-        elif file_type == 'html':
-            logger.bind(force=True).info(f'保存到 {dir_path}')
-        elif file_type == 'epub':
-            from .epub import convert_md_to_epub
-            md_content = self.assemble(dir_path, 'md')
-            convert_md_to_epub(md_content, self.title, self.author, self.intro, self.cover, path, fetcher=self.fetcher)
-            logger.bind(force=True).info(f'保存到 {path / _sanitize_filename(self.title)}.epub')
 
 
 def ocr_novel_gifs(nid: int, path: str | Path = './'):
@@ -518,4 +401,4 @@ def ocr_novel_gifs(nid: int, path: str | Path = './'):
 
 if __name__ == '__main__':
     novel = Novel(43708)
-    novel.download_novel(file_type='epub', download_reviews=True)
+    novel.download(file_type='epub')
