@@ -11,7 +11,8 @@
 - 漫画下载（目录 / HTML / EPUB / PDF）
 - 有声小说下载（MP3）
 - 评论下载（长评 + 回复）
-- 格式转换（漫画目录 → HTML / EPUB / PDF）
+- 搜索小说/漫画（关键词搜索、相关推荐、作者作品）
+- 格式转换（小说/漫画目录 → HTML / EPUB / PDF）
 - VIP 章节处理（去拼音 / OCR / LLM 纠错）
 - Cookie 持久化登录
 - 多线程并发下载
@@ -44,7 +45,14 @@ uv run python main.py audio 153 -o ./output/
 # 下载评论
 uv run python main.py review https://m.sfacg.com/b/43708/ -o ./output/
 
-# 转换漫画格式
+# 搜索小说
+uv run python main.py search 魔法少女
+uv run python main.py search 魔法少女 --api        # 带评分
+uv run python main.py search 魔法少女 --comic       # 搜索漫画
+uv run python main.py search 43708 --related        # 相关推荐
+uv run python main.py search 43708 --author-works   # 作者其他作品
+
+# 转换格式（小说/漫画）
 uv run python main.py convert output/落樱之剑 -f html,epub,pdf
 
 # VIP GIF 去拼音（快速，0.2s）
@@ -82,13 +90,60 @@ uv run python main.py audio <audio_id> -o <output_dir>
 # 章节：-c "1-10"
 ```
 
+### 搜索
+
+```bash
+# 搜索小说
+uv run python main.py search <keyword>
+
+# 搜索漫画
+uv run python main.py search <keyword> --comic
+
+# 带评分的 API 搜索
+uv run python main.py search <keyword> --api
+
+# 查看相关推荐（传入小说 ID）
+uv run python main.py search <novel_id> --related
+
+# 查看作者其他作品
+uv run python main.py search <novel_id> --author-works
+```
+
+```python
+# Python API
+from sfacglib.search import search_novel, search_comic, search_api, get_related, get_author_works
+
+results = search_novel('魔法少女')       # HTML 搜索
+results = search_comic('魔法')           # 漫画搜索
+results = search_api('转生')             # JSON API（带评分）
+results = get_related('43708')           # 相关推荐
+results = get_author_works('43708')      # 作者作品
+
+for r in results:
+    print(r.id, r.title, r.author, r.url, r.score)
+```
+
 ### 格式转换
 
 ```bash
-uv run python main.py convert <comic_dir> -f <formats>
+# 小说/漫画目录转换（自动检测内容类型）
+uv run python main.py convert <dir> -f <formats>
 # 示例：-f html,epub,pdf
-# PDF 边距：-p 20
+# PDF 仅支持漫画，小说请使用 txt/epub/html
 ```
+
+```python
+# Python API
+from sfacglib.convert import convert
+
+convert('output/小说目录', formats=['html', 'epub'])  # 小说
+convert('output/漫画目录', formats=['html', 'epub', 'pdf'])  # 漫画
+```
+
+HTML 输出特性：
+- 侧边栏目录（可展开卷/章）
+- 响应式布局（桌面/平板/手机）
+- 打印优化（Ctrl+P 生成 PDF，自动目录页、封面占满、图片防切断）
 
 ### 登录
 
@@ -297,10 +352,11 @@ sfacglib/
   comic.py          # 漫画下载器
   audio.py          # 有声下载器
   epub.py           # EPUB 生成
-  convert.py        # 格式转换
+  convert.py        # 格式转换（小说/漫画 → HTML/EPUB/PDF）
+  search.py         # 搜索 API（关键词、相关推荐、作者作品）
   vip.py            # VIP 章节处理
   ocr_fast.py       # OCR 引擎（RapidOCR、去拼音、rec_only、并行）
-  chatbot.py        # 聊天机器人（tool calling、OCR 纠错）
+  chatbot.py        # Agent（tool calling、OCR 纠错）
   nlp.py            # NLP 后处理（合并断行）
   progress.py       # 进度追踪（SQLite）
   utils.py          # 共享工具

@@ -22,7 +22,8 @@ sfacglib/
   comic.py        # Comic downloader (ComicChapter, ComicPage)
   audio.py        # Audiobook downloader (AudioVolume, AudioChapter)
   epub.py         # EPUB generation with three-level TOC
-  convert.py      # Format conversion (HTML, EPUB, PDF)
+  convert.py      # Format conversion (HTML, EPUB, PDF — auto-detect novel/comic)
+  search.py       # Search API (keyword, related novels, author works)
   vip.py          # VIP chapter processing (image download, GIF→PNG, OCR pipeline)
   ocr_fast.py     # OCR engine (RapidOCR, smart pinyin removal, rec_only, parallel)
   llm_vision.py   # LLM Vision API for OCR
@@ -52,7 +53,6 @@ sfacglib/
 
 main.py           # Unified CLI entry point
 buildozer.spec    # Android APK build config
-.cookies.json     # Saved session cookies — gitignored (stored in ~/.config/sfacg/)
 .env              # Chatbot config (CHATBOT_BASE_URL, CHATBOT_API_KEY, CHATBOT_MODEL)
 ```
 
@@ -85,7 +85,11 @@ VIP chapters detected via `.icn_vip` badge. Downloaded as `.gif` files, OCR is a
 
 ### Format Conversion
 
-`convert.py` provides standalone format conversion. See [README.md](README.md#格式转换) for usage.
+`convert.py` provides standalone format conversion for both novels and comics. Auto-detects content type from file extensions. HTML output features sidebar TOC, responsive layout, and print-to-PDF support. See [README.md](README.md#格式转换) for usage.
+
+### Search API
+
+`search.py` provides novel/comic search via `s.sfacg.com` HTML scraping and `m.sfacg.com` JSON API. Also supports related novels (`get_related`) and author works (`get_author_works`). See [README.md](README.md#搜索) for usage.
 
 ## Coding Conventions
 
