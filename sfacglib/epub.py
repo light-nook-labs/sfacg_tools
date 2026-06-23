@@ -261,7 +261,14 @@ def convert_md_to_epub(
 
     parts = vol_pattern.split(md_content)
 
-    info_html = _md_to_html(parts[0])
+    intro_parts = [parts[0]]
+    start_i = 1
+    if len(parts) >= 3 and ('小说信息' in parts[1] or 'info' in parts[1].lower()):
+        intro_parts.append(f'## {parts[1]}')
+        intro_parts.append(parts[2])
+        start_i = 3
+
+    info_html = _md_to_html('\n'.join(intro_parts))
     if info_html.strip():
         page = epub.EpubHtml(
             title='小说信息',
@@ -274,7 +281,7 @@ def convert_md_to_epub(
         toc.append(page)
 
     vol_sections = []
-    i = 1
+    i = start_i
     while i < len(parts):
         vol_title = parts[i].strip()
         vol_content = parts[i + 1] if i + 1 < len(parts) else ''
