@@ -25,6 +25,15 @@ def _detect_media_type(url: str, fallback: str = 'image/jpeg') -> str:
     return _MEDIA_TYPES.get(f'.{ext}', fallback)
 
 
+def _set_cover(book: epub.EpubBook, cover_url: str, fetcher: Fetcher) -> None:
+    if not cover_url:
+        return
+    try:
+        book.set_cover('cover.jpg', fetcher.get_binary(cover_url))
+    except Exception as e:
+        logger.warning(f'封面下载失败: {e}')
+
+
 def _process_images(
     book: epub.EpubBook,
     container: Tag,
@@ -151,10 +160,7 @@ def download_epub(
     book.add_author(author)
     book.add_metadata('DC', 'description', desc)
 
-    try:
-        book.set_cover('cover.jpg', fetcher.get_binary(cover))
-    except Exception as e:
-        logger.warning(f'封面下载失败: {e}')
+    _set_cover(book, cover, fetcher)
 
     spine: list[str | EpubHtml] = ['nav']
     toc: list = []
@@ -248,10 +254,7 @@ def convert_md_to_epub(
     book.add_author(author)
     book.add_metadata('DC', 'description', desc)
 
-    try:
-        book.set_cover('cover.jpg', fetcher.get_binary(cover))
-    except Exception as e:
-        logger.warning(f'封面下载失败: {e}')
+    _set_cover(book, cover, fetcher)
 
     spine: list[str | EpubHtml] = ['nav']
     toc: list = []

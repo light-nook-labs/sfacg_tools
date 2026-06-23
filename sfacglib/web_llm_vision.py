@@ -289,12 +289,13 @@ class DeepSeekWebOCR:
 
     async def _ocr_segment(self, image: Image.Image) -> str:
         img = resize_to_max(image, 1000)
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            img.save(tmp, format='PNG', optimize=True)
-            tmp.flush()
-            tmp.close()
-            tmp_path = Path(tmp.name)
+        tmp_path = None
         try:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                img.save(tmp, format='PNG', optimize=True)
+                tmp.flush()
+                tmp.close()
+                tmp_path = Path(tmp.name)
             page = await self.context.new_page()
             self.page = page
             await self._navigate_to_deepseek()
@@ -307,7 +308,8 @@ class DeepSeekWebOCR:
                 pass
             return _fix_inline_spaces(text)
         finally:
-            tmp_path.unlink()
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
 
     def ocr_gif(self, gif_bytes: bytes, max_height: int = 1500) -> str:
         return asyncio.run(self._ocr_gif_async(gif_bytes, max_height))

@@ -112,6 +112,7 @@ uv run python main.py search <novel_id> --author-works
 ```python
 # Python API
 from sfacglib.search import search_novel, search_comic, search_api, get_related, get_author_works
+from sfacglib.models import SearchItem  # Pydantic 模型
 
 results = search_novel('魔法少女')       # HTML 搜索
 results = search_comic('魔法')           # 漫画搜索
@@ -144,6 +145,11 @@ HTML 输出特性：
 - 侧边栏目录（可展开卷/章）
 - 响应式布局（桌面/平板/手机）
 - 打印优化（Ctrl+P 生成 PDF，自动目录页、封面占满、图片防切断）
+
+PDF 输出特性：
+- 封面页（居中封面 + 标题 + 作者 + 生成工具信息）
+- 章节标题页（居中显示，大字体）
+- 漫画图片自适应页面
 
 ### 登录
 
@@ -338,15 +344,47 @@ uv run python main.py ocr-fix ./ocr_output/ --pattern "*.txt" -c "玄幻小说"
 
 所有选择器位于 `sfacglib/selectors.json`。失效时更新 JSON 即可，无需改代码。
 
+## Pydantic 模型
+
+项目使用 Pydantic 进行数据验证和序列化：
+
+```python
+from sfacglib.models import SearchItem, Catalog, CatalogSection, CatalogItem
+
+# 搜索结果
+result = SearchItem(id='43708', title='...', author='...')
+
+# 目录结构（自动从旧格式迁移）
+catalog = Catalog.load('output/小说/catalog.json')
+for section in catalog.sections:
+    print(f'{section.title}: {len(section.items)} 章')
+    for item in section.items:
+        print(f'  {item.title} -> {item.file}')
+
+# 保存目录
+catalog.save('output/小说/catalog.json')
+```
+
+配置使用 `pydantic-settings`，自动从 `.env` 加载：
+
+```python
+from sfacglib.config import settings
+
+print(settings.chatbot_model)
+print(settings.llm_api_key)
+```
+
 ## 项目结构
 
 ```
 sfacglib/
+  models.py         # Pydantic 数据模型（SearchItem, Catalog 等）
   base.py           # 抽象基类：Container, Section, Item
-  config.py         # 集中常量
+  config.py         # 集中常量 + Pydantic Settings
   fetcher.py        # HTTP 请求（轮换 UA、重试、限速、认证）
   auth.py           # Cookie 管理
   selectors.py      # CSS 选择器注册表
+  selectors.json    # CSS 选择器定义
   ch.py             # 章节内容抓取（移动端 + PC + VIP）
   novel.py          # 小说下载器
   comic.py          # 漫画下载器
@@ -373,9 +411,38 @@ main.py             # CLI 入口
 | 漫画 | Comic | ComicChapter | ComicPage |
 | 有声 | Audio | AudioVolume | AudioChapter |
 
+### catalog.json 结构
+
+```json
+{
+  "id": "43708",
+  "title": "小说标题",
+  "author": "作者名",
+  "cover": "https://...",
+  "intro": "简介...",
+  "sections": [
+    {
+      "idx": 1,
+      "title": "第一卷",
+      "dir": "vol_001_第一卷",
+      "items": [
+        {
+          "idx": 1,
+          "title": "第一章",
+          "url": "https://...",
+          "file": "vol_001_第一卷/ch_001_第一章.md"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 目录结构
+
 ```
 {title}/
-  catalog.json          # 元数据 + 章节映射
+  catalog.json          # 元数据 + 嵌套章节映射
   vol_{idx}_{name}/     # 卷目录
     ch_{idx}_{name}.md  # 章节文件
 ```

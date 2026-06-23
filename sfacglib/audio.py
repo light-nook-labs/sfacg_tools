@@ -79,15 +79,17 @@ class AudioVolume:
         volume_path.mkdir(parents=True, exist_ok=True)
         volume_dict = self.get_volume_dict()
 
+        pending_cids: set[str] | None = None
+        if tracker and task_id:
+            pending = tracker.get_pending(task_id)
+            pending_cids = {ch['cid'] for ch in pending}
+
         def _download(href: str):
             title = volume_dict[href]
             full_url = mobile_url(href)
             ch_cid = _extract_id(full_url)
-            if tracker and task_id:
-                pending = tracker.get_pending(task_id)
-                pending_cids = {ch['cid'] for ch in pending}
-                if pending_cids and ch_cid not in pending_cids:
-                    return
+            if pending_cids is not None and ch_cid not in pending_cids:
+                return
             AudioChapter(title, href, fetcher=self.fetcher).download_mp3(volume_path, force)
             if tracker and task_id:
                 tracker.mark_done(task_id, full_url)
@@ -209,13 +211,14 @@ class Audio:
         if chapter_range:
             ids = set()
             is_index = False
+            total_chapters = len(all_chapters)
             for part in chapter_range.split(','):
                 part = part.strip()
                 if '-' in part and not part.startswith('-'):
                     s, e = part.split('-', 1)
                     try:
                         s_int, e_int = int(s), int(e)
-                        if s_int < 10000 or s_int < 0:
+                        if all(0 < x <= total_chapters for x in (s_int, e_int)):
                             is_index = True
                         for i in range(s_int, e_int + 1):
                             ids.add(str(i))
@@ -225,7 +228,7 @@ class Audio:
                     try:
                         val = int(part)
                         ids.add(str(val))
-                        if val < 10000 or val < 0:
+                        if 0 < val <= total_chapters:
                             is_index = True
                     except ValueError:
                         ids.add(part)
@@ -276,13 +279,7 @@ class Audio:
             logger.bind(force=True).info(f'完成卷: {vol_title}')
 
         if tracker and task_id:
-            tracker.mark_task_done(task_id)
-            pending = tracker.get_pending(task_id)
-            if not pending:
-                tracker.delete_task(task_id)
-                logger.bind(force=True).info(f'任务完成，已清理记录: {task_id}')
-            else:
-                logger.warning(f'任务有 {len(pending)} 个失败章节，保留记录')
+            tracker.finalize_task(task_id)
 
 
 if __name__ == '__main__':

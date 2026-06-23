@@ -1,4 +1,3 @@
-import json
 import threading
 from pathlib import Path
 from abc import ABC, abstractmethod
@@ -9,6 +8,7 @@ from .fetcher import Fetcher
 from .config import WORKERS_CHAPTER
 from .progress import ProgressTracker, _extract_id
 from .utils import sanitize_filename as _sanitize_filename
+from .models import Catalog, CatalogSection, CatalogItem
 
 
 class AntiScrapingError(Exception):
@@ -84,14 +84,20 @@ class Container(ABC):
                     found = True
                 if found:
                     filtered.append((s, i))
+            if not found:
+                logger.warning(f'起始章节未找到: {start}')
             all_items = filtered
 
         if end:
             filtered = []
+            found = False
             for idx, (s, i) in enumerate(all_items):
                 filtered.append((s, i))
                 if i.title == end or _extract_id(i.url) == end or str(idx + 1) == end:
+                    found = True
                     break
+            if not found:
+                logger.warning(f'结束章节未找到: {end}')
             all_items = filtered
 
         if range_str:
@@ -155,14 +161,14 @@ class Container(ABC):
         lock=None,
         tracker: ProgressTracker | None = None,
         task_id: str | None = None,
-    ) -> list[dict]:
+    ) -> list[CatalogSection]:
         has_tracker = tracker and task_id
         pending_cids = None
         if has_tracker:
             pending = tracker.get_pending(task_id)
             pending_cids = set(ch['cid'] for ch in pending)
 
-        catalog_items = []
+        section_map: dict[int, CatalogSection] = {}
 
         with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
             futures = {}
@@ -188,14 +194,19 @@ class Container(ABC):
                     future.result()
                     if tracker and task_id:
                         tracker.mark_done(task_id, item.url)
-                    catalog_items.append({
-                        'section_idx': section.idx,
-                        'section_title': section.title,
-                        'item_idx': item.idx,
-                        'item_title': item.title,
-                        'item_url': item.url,
-                        'file': str(save_path.relative_to(dir_path)),
-                    })
+                    if section.idx not in section_map:
+                        section_map[section.idx] = CatalogSection(
+                            idx=section.idx,
+                            title=section.title,
+                            dir=save_path.parent.name,
+                            items=[],
+                        )
+                    section_map[section.idx].items.append(CatalogItem(
+                        idx=item.idx,
+                        title=item.title,
+                        url=item.url,
+                        file=str(save_path.relative_to(dir_path)),
+                    ))
                 except AntiScrapingError as e:
                     logger.error(f'反爬检测，停止所有下载: {e}')
                     anti_scraping = e
@@ -215,11 +226,11 @@ class Container(ABC):
                             pbar.update(1)
 
             if anti_scraping:
-                if catalog_items:
-                    logger.warning(f'反爬检测，已下载 {len(catalog_items)} 项，保存部分结果')
+                if section_map:
+                    logger.warning(f'反爬检测，已下载 {sum(len(s.items) for s in section_map.values())} 项，保存部分结果')
                 raise anti_scraping
 
-        return sorted(catalog_items, key=lambda x: (x['section_idx'], x['item_idx']))
+        return sorted(section_map.values(), key=lambda s: s.idx)
 
     def download(
         self,
@@ -260,31 +271,20 @@ class Container(ABC):
         lock = threading.Lock()
         pbar = tqdm(total=len(all_items), desc=self.title, unit='item')
 
-        catalog = {
-            'id': self.id,
-            'title': self.title,
-            'info': info_md,
-            'sections': [],
-            'items': [],
-        }
+        catalog = Catalog(
+            id=self.id,
+            title=self.title,
+            intro=info_md,
+        )
 
-        catalog['items'] = self._download_items(
+        catalog.sections = self._download_items(
             all_items, dir_path, ext,
             pbar=pbar, lock=lock, tracker=tracker, task_id=task_id,
         )
 
-        for section in sections:
-            catalog['sections'].append({
-                'idx': section.idx,
-                'title': section.title,
-            })
-
         pbar.close()
 
-        (dir_path / 'catalog.json').write_text(
-            json.dumps(catalog, ensure_ascii=False, indent=2),
-            encoding='utf-8',
-        )
+        catalog.save(dir_path / 'catalog.json')
 
         if ext == 'html':
             (dir_path / 'info.html').write_text(info_html, encoding='utf-8')
@@ -292,45 +292,38 @@ class Container(ABC):
             (dir_path / 'info.md').write_text(info_md, encoding='utf-8')
 
         if tracker and task_id:
-            tracker.mark_task_done(task_id)
-            pending = tracker.get_pending(task_id)
-            if not pending:
-                tracker.delete_task(task_id)
-                logger.bind(force=True).info(f'任务完成，已清理记录: {task_id}')
-            else:
-                logger.warning(f'任务有 {len(pending)} 个失败项，保留记录')
+            tracker.finalize_task(task_id)
 
         logger.bind(force=True).info(f'保存到 {dir_path}')
         return dir_path
 
     def assemble(self, dir_path: Path, ext: str = 'md') -> str:
-        catalog = json.loads((dir_path / 'catalog.json').read_text(encoding='utf-8'))
+        catalog = Catalog.load(dir_path / 'catalog.json')
         parts = []
 
         if ext == 'html':
             parts.append(f"""<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>{catalog['title']}</title></head>
+<head><meta charset="utf-8"><title>{catalog.title}</title></head>
 <body>""")
-            parts.append((dir_path / 'info.html').read_text(encoding='utf-8'))
+            info_path = dir_path / 'info.html'
+            if info_path.exists():
+                parts.append(info_path.read_text(encoding='utf-8'))
         else:
-            parts.append((dir_path / 'info.md').read_text(encoding='utf-8'))
+            info_path = dir_path / 'info.md'
+            if info_path.exists():
+                parts.append(info_path.read_text(encoding='utf-8'))
 
-        items_key = 'items' if 'items' in catalog else 'chapters'
-        last_section_idx = None
-        for item in catalog[items_key]:
-            sec_idx = item.get('section_idx', 0)
-            if sec_idx != last_section_idx:
-                sec_title = item.get('section_title', '')
-                if sec_title:
-                    if ext == 'html':
-                        parts.append(f'<h2>{sec_title}</h2>')
-                    else:
-                        parts.append(f'## {sec_title}')
-                last_section_idx = sec_idx
-            item_path = dir_path / item['file']
-            if item_path.exists():
-                parts.append(item_path.read_text(encoding='utf-8'))
+        for section in catalog.sections:
+            if section.title:
+                if ext == 'html':
+                    parts.append(f'<h2>{section.title}</h2>')
+                else:
+                    parts.append(f'## {section.title}')
+            for item in section.items:
+                item_path = dir_path / item.file
+                if item_path.exists():
+                    parts.append(item_path.read_text(encoding='utf-8'))
 
         if ext == 'html':
             parts.append('</body></html>')

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from loguru import logger
 import requests
-from .config import COOKIE_PATH, URL_CHECK_AUTH
+from .config import COOKIE_PATH, URL_CHECK_AUTH, COOKIE_DOMAIN
 
 _DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
@@ -91,7 +91,7 @@ class Auth:
         for cookie in session.cookies:
             original_cookies.set_cookie(cookie)
         for name, value in self._cookies.items():
-            session.cookies.set(name, value, domain='.sfacg.com')
+            session.cookies.set(name, value, domain=COOKIE_DOMAIN)
 
         try:
             resp = session.get(
@@ -99,24 +99,25 @@ class Auth:
                 headers={'User-Agent': _DEFAULT_UA},
                 timeout=10,
             )
-            resp.raise_for_status()
-            if resp.raise_for_status() is None and ('退出' in resp.text or 'logout' in resp.text.lower() or '我的' in resp.text):
-                logger.info('Session cookies are valid')
-                return True
-            logger.info('Session cookies expired')
-            session.cookies.clear()
-            session.cookies.update(original_cookies)
-            return False
-        except Exception as e:
-            logger.warning(f'Cookie validation failed: {e}')
+        except requests.RequestException as e:
+            logger.warning(f'Cookie validation network error: {e}')
             session.cookies.clear()
             session.cookies.update(original_cookies)
             return False
 
+        if resp.status_code == 200 and ('退出' in resp.text or 'logout' in resp.text.lower() or '我的' in resp.text):
+            logger.info('Session cookies are valid')
+            return True
+
+        logger.info('Session cookies expired')
+        session.cookies.clear()
+        session.cookies.update(original_cookies)
+        return False
+
     def apply(self, session: requests.Session):
         """Apply loaded cookies to a requests session."""
         for name, value in self._cookies.items():
-            session.cookies.set(name, value, domain='.sfacg.com')
+            session.cookies.set(name, value, domain=COOKIE_DOMAIN)
 
     def logout(self):
         """Clear saved cookies."""

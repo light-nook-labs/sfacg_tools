@@ -13,6 +13,8 @@ from .selectors import Selectors
 from .base import Container, Section, Item, _sanitize_filename
 from .config import COMIC_BASE, API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE, WORKERS_IMAGE, WORKERS_CHAPTER
 from .progress import ProgressTracker, _extract_id
+from .models import Catalog, CatalogSection, CatalogItem
+from .convert import convert_to_epub, convert_to_pdf
 
 
 class ComicPage(Item):
@@ -72,15 +74,18 @@ class ComicChapter(Section):
 
         soup = BeautifulSoup(html, 'html.parser')
         var_names = ['comicId', 'nv', 'chapterId']
-        args = []
+        result = {}
         for script in soup.find_all('script'):
             txt = script.string or ''
             if all(v in txt for v in var_names):
                 for var in var_names:
-                    match = re.search(rf'{var}\s*=\s*([^\s;]+);', txt)
-                    if match:
-                        args.append(match.group(1).strip('"'))
-        return args
+                    if var not in result:
+                        match = re.search(rf'{var}\s*=\s*([^\s;]+);', txt)
+                        if match:
+                            result[var] = match.group(1).strip('"')
+                if len(result) == 3:
+                    return [result['comicId'], result['nv'], result['chapterId']]
+        return []
 
     def _is_vip(self, html: str = '') -> bool:
         if not html:
@@ -130,16 +135,16 @@ class ComicChapter(Section):
             resp = self.fetcher.get(api_url, params=params, headers=headers)
             data = resp.json()
         except Exception as e:
-            logger.error(f'Failed to get comic images: {e}')
             if not use_vip_api:
-                logger.info('Retrying with VIP API endpoint...')
+                logger.info(f'Non-VIP API failed ({e}), retrying with VIP API...')
                 return self.get_image_urls(use_vip_api=True)
+            logger.error(f'Failed to get comic images: {e}')
             return []
 
         if isinstance(data, dict):
             urls = data.get('data', [])
             if not urls and not use_vip_api:
-                logger.info('Empty result, retrying with VIP API endpoint...')
+                logger.info('Empty result from non-VIP API, retrying with VIP API...')
                 return self.get_image_urls(use_vip_api=True)
             return urls
         return []
@@ -158,9 +163,17 @@ class Comic(Container):
     def __init__(self, url: str, fetcher: Fetcher | None = None, selectors: Selectors | None = None):
         super().__init__(fetcher)
         self.url = url
+        self.id = self._extract_id(url)
         self.title: str = ''
-        self.info: str = ''
+        self.author: str = ''
+        self.intro: str = ''
+        self.cover: str = ''
         self.sel = selectors or Selectors()
+
+    @staticmethod
+    def _extract_id(url: str) -> str:
+        match = re.search(r'/mh/(\w+)', url)
+        return match.group(1) if match else url
 
     def __repr__(self):
         return f'<Comic: {self.url}>'
@@ -169,7 +182,7 @@ class Comic(Container):
         html = self.fetcher.get_html(self.url)
         soup = BeautifulSoup(html, 'html.parser')
 
-        self.sel.find(soup, 'comic_info', 'container', url=self.url)
+        container = self.sel.find(soup, 'comic_info', 'container', url=self.url)
 
         title_tag = soup.title
         if title_tag:
@@ -185,16 +198,39 @@ class Comic(Container):
         self.title = title
 
         cover = self.sel.find_attr(soup, 'comic_info', 'cover', url=self.url, required=False) or ''
+        if cover.startswith('//'):
+            cover = 'https:' + cover
+        self.cover = cover
 
         label = ''
         label_tag = self.sel.find(soup, 'comic_info', 'labels', url=self.url, required=False)
         if label_tag:
             label = ' '.join(label_tag.stripped_strings)
 
+        author = ''
         more_info = ''
-        stats_tag = self.sel.find(soup, 'comic_info', 'stats', url=self.url, required=False)
-        if stats_tag:
-            more_info = ' '.join(stats_tag.stripped_strings)
+        if container:
+            container_text = container.get_text()
+            author_match = re.search(r'作者[：:]\s*(.+?)(?:\s*作品类型|$)', container_text)
+            if author_match:
+                author = author_match.group(1).strip()
+            
+            region_match = re.search(r'漫画地区[：:]\s*(.+?)(?:\s|作者|$)', container_text)
+            type_match = re.search(r'作品类型[：:]\s*(.+?)(?:\s|$)', container_text)
+            update_match = re.search(r'最新连载[：:]\s*(.+?)(?:\s|$)', container_text)
+            clicks_match = re.search(r'点击数[：:]\s*(\d+)', container_text)
+            
+            parts = []
+            if region_match:
+                parts.append(f'地区：{region_match.group(1).strip()}')
+            if type_match:
+                parts.append(f'类型：{type_match.group(1).strip()}')
+            if update_match:
+                parts.append(f'最新：{update_match.group(1).strip()}')
+            if clicks_match:
+                parts.append(f'点击：{clicks_match.group(1).strip()}')
+            more_info = '　'.join(parts)
+        self.author = author
 
         interactions = ''
         interact_tag = self.sel.find(soup, 'comic_info', 'interactions', url=self.url, required=False)
@@ -205,16 +241,24 @@ class Comic(Container):
             interactions = ' '.join(items)
 
         description = ''
-        desc_tag = self.sel.find(soup, 'comic_info', 'description', url=self.url, required=False)
-        if desc_tag:
-            description = desc_tag.get_text()
+        if container:
+            li_tags = container.find_all('li')
+            for li in li_tags:
+                if not li.get('class') or 'cover' not in li.get('class', []):
+                    text = li.get_text(strip=True)
+                    if text and len(text) > 20:
+                        description = text.split('漫画地区')[0].split('作者')[0].strip()
+                        break
+        self.intro = description
 
-        self.info = f"""
+        info_md = f"""
 # {title}
 
 ![封面]({cover})
 
 漫画地址： {self.url}
+
+作者：{author}
 
 标签： {label}
 
@@ -231,13 +275,14 @@ class Comic(Container):
 <h1>{title}</h1>
 <img src="{cover}" alt="">
 <p>漫画地址： {self.url}</p>
+<p>作者：{author}</p>
 <p>标签： {label}</p>
 <p>{more_info}</p>
 <p>{interactions}</p>
 <div>{description}</div>
 </body>
 </html>"""
-        return self.info, info_html
+        return info_md, info_html
 
     def get_sections(self) -> list[ComicChapter]:
         html = self.fetcher.get_html(self.url)
@@ -276,42 +321,33 @@ class Comic(Container):
         dir_path = path / _sanitize_filename(self.title)
         dir_path.mkdir(parents=True, exist_ok=True)
 
-        catalog = {
-            'url': self.url,
-            'title': self.title,
-            'info': info_md,
-            'sections': [],
-            'items': [],
-        }
-
-        for section in sections:
-            catalog['sections'].append({
-                'idx': section.idx,
-                'title': section.title,
-            })
+        catalog = Catalog(
+            id=self.id,
+            title=self.title,
+            author=self.author,
+            cover=self.cover,
+            intro=info_md,
+        )
 
         if file_type == 'html' and not local_images:
-            logger.warning('⚠️ 使用URL模式: 图片链接随时可能失效，建议使用 local_images=True 下载到本地')
+            logger.warning('使用URL模式: 图片链接随时可能失效，建议使用 local_images=True 下载到本地')
 
-            all_items = []
             for section in sections:
+                catalog_section = CatalogSection(
+                    idx=section.idx,
+                    title=section.title,
+                    items=[],
+                )
                 for item in section.get_items():
-                    all_items.append((section, item))
+                    catalog_section.items.append(CatalogItem(
+                        idx=item.idx,
+                        title=item.title,
+                        url=item.url,
+                        file='',
+                    ))
+                catalog.sections.append(catalog_section)
 
-            for section, item in all_items:
-                catalog['items'].append({
-                    'section_idx': section.idx,
-                    'section_title': section.title,
-                    'item_idx': item.idx,
-                    'item_title': item.title,
-                    'item_url': item.url,
-                    'file': '',
-                })
-
-            (dir_path / 'catalog.json').write_text(
-                json.dumps(catalog, ensure_ascii=False, indent=2),
-                encoding='utf-8',
-            )
+            catalog.save(dir_path / 'catalog.json')
 
             self._export_html(dir_path, sections, local_images=False)
             logger.bind(force=True).info(f'HTML保存到 {dir_path}')
@@ -329,38 +365,29 @@ class Comic(Container):
         logger.bind(force=True).info(f'共 {len(all_items)} 页待下载')
 
         item_list = [{'url': i.url, 'title': i.title} for _, i in all_items]
-        task_id = tracker.create_task('comic', self.title, self.url, '', chapters=item_list) if tracker else None
+        task_id = tracker.create_task('comic', self.title, self.id, '', chapters=item_list) if tracker else None
 
         lock = threading.Lock()
         pbar = tqdm(total=len(all_items), desc=self.title, unit='page')
 
-        catalog['items'] = self._download_items(all_items, dir_path, 'jpg', 'ch', 'page', pbar, lock, tracker, task_id)
+        catalog.sections = self._download_items(all_items, dir_path, 'jpg', 'ch', 'page', pbar, lock, tracker, task_id)
 
         pbar.close()
 
-        (dir_path / 'catalog.json').write_text(
-            json.dumps(catalog, ensure_ascii=False, indent=2),
-            encoding='utf-8',
-        )
+        catalog.save(dir_path / 'catalog.json')
         (dir_path / 'info.md').write_text(info_md, encoding='utf-8')
 
         if tracker and task_id:
-            tracker.mark_task_done(task_id)
-            pending = tracker.get_pending(task_id)
-            if not pending:
-                tracker.delete_task(task_id)
-                logger.bind(force=True).info(f'任务完成，已清理记录: {task_id}')
-            else:
-                logger.warning(f'任务有 {len(pending)} 个失败项，保留记录')
+            tracker.finalize_task(task_id)
 
         logger.bind(force=True).info(f'目录保存到 {dir_path}')
 
         if file_type == 'html':
             self._export_html(dir_path, sections, local_images=True)
         elif file_type == 'epub':
-            self._export_epub(dir_path, sections)
+            convert_to_epub(dir_path, self.fetcher)
         elif file_type == 'pdf':
-            self._export_pdf(dir_path, sections)
+            convert_to_pdf(dir_path, fetcher=self.fetcher)
 
     def export_html(
         self,
@@ -374,7 +401,7 @@ class Comic(Container):
         path.mkdir(parents=True, exist_ok=True)
 
         if not local_images:
-            logger.warning('⚠️ 使用URL模式: 图片链接随时可能失效，建议使用 local_images=True 下载到本地')
+            logger.warning('使用URL模式: 图片链接随时可能失效，建议使用 local_images=True 下载到本地')
 
         sections = self.get_sections()
         sections = self._filter_sections(sections, start_chapter, end_chapter, chapter_range)
@@ -401,12 +428,12 @@ class Comic(Container):
     def _export_html(self, dir_path: Path, sections: list[ComicChapter], local_images: bool = True):
         catalog_path = dir_path / 'catalog.json'
         if catalog_path.exists():
-            catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
+            catalog = Catalog.load(catalog_path)
         else:
-            catalog = {'items': []}
+            catalog = Catalog(id='', title=self.title)
 
         if not local_images:
-            logger.warning('⚠️ HTML使用远程URL，图片链接将在服务器清理后失效')
+            logger.warning('HTML使用远程URL，图片链接将在服务器清理后失效')
 
         html_parts = [f"""<!DOCTYPE html>
 <html>
@@ -430,7 +457,7 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
 """]
 
         if not local_images:
-            html_parts.append('<div class="warning">⚠️ 本文件使用远程图片URL，链接随时可能失效。建议下载本地版本。</div>')
+            html_parts.append('<div class="warning">本文件使用远程图片URL，链接随时可能失效。建议下载本地版本。</div>')
 
         html_parts.append("""<div class="toc">
 <h2>目录</h2>
@@ -441,24 +468,17 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
 
         html_parts.append('</div>')
 
-        items_by_section: dict[int, list] = {}
-        for item in catalog.get('items', []):
-            sec_idx = item.get('section_idx', 0)
-            if sec_idx not in items_by_section:
-                items_by_section[sec_idx] = []
-            items_by_section[sec_idx].append(item)
-
-        for section in sections:
+        for section in catalog.sections:
             html_parts.append(f'<div class="chapter" id="ch_{section.idx:03d}">')
             html_parts.append(f'<h2>{section.title}</h2>')
 
-            for item in items_by_section.get(section.idx, []):
+            for item in section.items:
                 if local_images:
-                    img_src = item.get('file', '')
+                    img_src = item.file
                 else:
-                    img_src = item.get('item_url', '')
+                    img_src = item.url
 
-                html_parts.append(f'<img src="{img_src}" alt="{item.get("item_title", "")}" loading="lazy">')
+                html_parts.append(f'<img src="{img_src}" alt="{item.title}" loading="lazy">')
 
             html_parts.append('</div>')
 
@@ -467,150 +487,6 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
         html_file = dir_path / f'{_sanitize_filename(self.title)}.html'
         html_file.write_text('\n'.join(html_parts), encoding='utf-8')
         logger.bind(force=True).info(f'HTML文件: {html_file}')
-
-    def _export_epub(self, dir_path: Path, sections: list[ComicChapter]):
-        try:
-            from ebooklib import epub
-        except ImportError:
-            logger.error('需要安装 ebooklib: uv add ebooklib')
-            return
-
-        catalog_path = dir_path / 'catalog.json'
-        if not catalog_path.exists():
-            logger.error('未找到目录，请先下载')
-            return
-
-        catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
-
-        book = epub.EpubBook()
-        book.set_identifier(self.url)
-        book.set_title(self.title)
-        book.set_language('zh')
-
-        cover_url = ''
-        info_html = catalog.get('info', '')
-        soup = BeautifulSoup(info_html, 'html.parser')
-        cover_img = soup.find('img')
-        if cover_img:
-            cover_url = cover_img.get('src', '')
-
-        if cover_url:
-            try:
-                cover_data = self.fetcher.get_binary(cover_url)
-                book.set_cover('cover.jpg', cover_data)
-            except Exception as e:
-                logger.warning(f'封面下载失败: {e}')
-
-        spine = ['nav']
-        toc = []
-
-        items_by_section: dict[int, list] = {}
-        for item in catalog.get('items', []):
-            sec_idx = item.get('section_idx', 0)
-            if sec_idx not in items_by_section:
-                items_by_section[sec_idx] = []
-            items_by_section[sec_idx].append(item)
-
-        for section in sections:
-            ch_items = items_by_section.get(section.idx, [])
-            if not ch_items:
-                continue
-
-            ch_html = f'<h2>{section.title}</h2>'
-            for item in ch_items:
-                img_path = dir_path / item.get('file', '')
-                if img_path.exists():
-                    img_data = img_path.read_bytes()
-                    fname = f'img_{section.idx:03d}_{item.get("item_idx", 0):03d}.jpg'
-                    book.add_item(epub.EpubImage(
-                        file_name=f'images/{fname}',
-                        media_type='image/jpeg',
-                        content=img_data,
-                    ))
-                    ch_html += f'<img src="images/{fname}" alt="">'
-
-            page = epub.EpubHtml(
-                title=section.title,
-                file_name=f'ch_{section.idx:03d}.xhtml',
-                lang='zh',
-                content=ch_html,
-            )
-            book.add_item(page)
-            spine.append(page)
-            toc.append(page)
-
-        book.toc = toc
-        book.add_item(epub.EpubNcx())
-        book.add_item(epub.EpubNav())
-        book.spine = spine
-
-        epub_path = dir_path / f'{_sanitize_filename(self.title)}.epub'
-        epub.write_epub(str(epub_path), book)
-        logger.bind(force=True).info(f'EPUB保存到 {epub_path}')
-
-    def _export_pdf(self, dir_path: Path, sections: list[ComicChapter], padding: int = 0):
-        try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.pdfgen import canvas
-            from reportlab.lib.utils import ImageReader
-            from reportlab.pdfbase import pdfmetrics
-            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-            pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
-        except ImportError:
-            logger.error('需要安装 reportlab: uv add reportlab')
-            return
-
-        catalog_path = dir_path / 'catalog.json'
-        if not catalog_path.exists():
-            logger.error('未找到目录，请先下载')
-            return
-
-        catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
-
-        pdf_path = dir_path / f'{_sanitize_filename(self.title)}.pdf'
-        c = canvas.Canvas(str(pdf_path), pagesize=A4)
-        width, height = A4
-
-        items_by_section: dict[int, list] = {}
-        for item in catalog.get('items', []):
-            sec_idx = item.get('section_idx', 0)
-            if sec_idx not in items_by_section:
-                items_by_section[sec_idx] = []
-            items_by_section[sec_idx].append(item)
-
-        for section in sections:
-            ch_items = items_by_section.get(section.idx, [])
-            if not ch_items:
-                continue
-
-            c.setFont('STSong-Light', 16)
-            c.drawCentredString(width / 2, height - 50, section.title)
-            c.showPage()
-
-            for item in ch_items:
-                img_path = dir_path / item.get('file', '')
-                if img_path.exists():
-                    try:
-                        img = ImageReader(str(img_path))
-                        img_width, img_height = img.getSize()
-
-                        usable_width = width - 2 * padding
-                        usable_height = height - 2 * padding
-
-                        scale = min(usable_width / img_width, usable_height / img_height)
-                        draw_width = img_width * scale
-                        draw_height = img_height * scale
-
-                        x = (width - draw_width) / 2
-                        y = (height - draw_height) / 2
-
-                        c.drawImage(img, x, y, draw_width, draw_height)
-                        c.showPage()
-                    except Exception as e:
-                        logger.warning(f'图片处理失败: {e}')
-
-        c.save()
-        logger.bind(force=True).info(f'PDF保存到 {pdf_path}')
 
 
 if __name__ == '__main__':

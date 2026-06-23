@@ -23,6 +23,12 @@ def sanitize_filename(name: str) -> str:
             encoded = encoded[:-1]
 
 
+def fix_url_protocol(url: str) -> str:
+    if url.startswith('//'):
+        return 'https:' + url
+    return url
+
+
 def build_url(base: str, path: str) -> str:
     if path.startswith('http://') or path.startswith('https://'):
         return path

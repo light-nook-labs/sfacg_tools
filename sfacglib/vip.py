@@ -8,10 +8,7 @@ from loguru import logger
 from PIL import Image
 
 from .fetcher import Fetcher
-from .config import OCR_WORKERS
-
-_VIP_DELAY_RANGE = (2.0, 5.0)
-_VIP_RETRY_DELAYS = [10, 20, 40]
+from .config import OCR_WORKERS, settings, VIP_DELAY_RANGE, VIP_RETRY_DELAYS, VIP_TIMEOUT, CORRECT_OCR_SYSTEM_PROMPT
 
 
 def _validate_gif(gif_bytes: bytes, expected_width: int = 0) -> tuple[bool, str]:
@@ -31,7 +28,7 @@ def _vip_rate_limit(fetcher: Fetcher | None = None):
     if fetcher:
         fetcher.rate_limiter.wait('vip.sfacg.com')
     else:
-        delay = random.uniform(*_VIP_DELAY_RANGE)
+        delay = random.uniform(*VIP_DELAY_RANGE)
         time.sleep(delay)
 
 
@@ -45,26 +42,18 @@ class VipMode(Enum):
 
 def llm_correct(text: str, api_key: str = '', base_url: str = '', model: str = '') -> str:
     """Use LLM to correct OCR artifacts and improve text quality."""
-    import os
     import requests
 
-    api_key = api_key or os.environ.get('LLM_API_KEY', '')
-    base_url = base_url or os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
-    model = model or os.environ.get('LLM_MODEL', 'gpt-4o-mini')
+    api_key = api_key or settings.llm_api_key
+    base_url = base_url or settings.llm_base_url or 'https://api.openai.com/v1'
+    model = model or settings.llm_model or 'gpt-4o-mini'
 
     if not api_key:
         logger.warning('No LLM API key configured, skipping correction')
         return text
 
     try:
-        prompt = (
-            '以下是一段从图片中OCR提取的中文小说文本。'
-            '请修正其中的OCR识别错误（如错别字、标点符号错误、断行不当等），'
-            '保持原文内容不变，只修正明显的识别错误。'
-            '直接返回修正后的文本，不要添加任何解释。\n\n'
-            f'{text}'
-        )
-
+        prompt = f'{CORRECT_OCR_SYSTEM_PROMPT}\n\n以下是需要纠正的文本：\n\n{text}'
         resp = requests.post(
             f'{base_url}/chat/completions',
             headers={
@@ -73,7 +62,10 @@ def llm_correct(text: str, api_key: str = '', base_url: str = '', model: str = '
             },
             json={
                 'model': model,
-                'messages': [{'role': 'user', 'content': prompt}],
+                'messages': [
+                    {'role': 'system', 'content': CORRECT_OCR_SYSTEM_PROMPT},
+                    {'role': 'user', 'content': f'请纠正以下OCR文本：\n\n{text}'},
+                ],
                 'temperature': 0.1,
             },
             timeout=60,
@@ -121,10 +113,10 @@ def process_vip_chapter(
     expected_w = int(qs.get('w', [0])[0])
 
     gif_bytes = b''
-    for attempt in range(1 + len(_VIP_RETRY_DELAYS)):
+    for attempt in range(1 + len(VIP_RETRY_DELAYS)):
         if attempt > 0:
-            delay = _VIP_RETRY_DELAYS[attempt - 1]
-            logger.warning(f'VIP retry {attempt}/{len(_VIP_RETRY_DELAYS)} after {delay}s...')
+            delay = VIP_RETRY_DELAYS[attempt - 1]
+            logger.warning(f'VIP retry {attempt}/{len(VIP_RETRY_DELAYS)} after {delay}s...')
             time.sleep(delay)
 
         _vip_rate_limit(fetcher)
@@ -153,6 +145,7 @@ def process_vip_chapter(
         frames = gif_to_frames(gif_bytes)
         if save_dir is None:
             save_dir = Path(tempfile.mkdtemp(prefix='sfacg_vip_'))
+            logger.info(f'Created temp directory: {save_dir} (caller responsible for cleanup)')
         frame_paths = []
         for i, frame in enumerate(frames):
             frame_path = save_dir / f'frame_{i:03}.png'

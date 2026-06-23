@@ -1,4 +1,3 @@
-import os
 import base64
 import time
 from pathlib import Path
@@ -9,6 +8,8 @@ from typing import Optional
 import requests
 from loguru import logger
 from PIL import Image
+
+from .config import settings, CORRECT_OCR_SYSTEM_PROMPT
 
 
 class LLMProvider(Enum):
@@ -53,7 +54,7 @@ class LLMVision:
         self.provider = provider
         config = PROVIDER_CONFIG.get(provider, {})
         
-        self.api_key = api_key or os.environ.get('LLM_API_KEY', '')
+        self.api_key = api_key or settings.llm_api_key
         self.base_url = base_url or config.get('base_url', '')
         self.vision_model = vision_model or config.get('vision_model', '')
         self.text_model = text_model or config.get('text_model', '')
@@ -233,13 +234,7 @@ class LLMVision:
         start_time = time.perf_counter()
         
         if not prompt:
-            prompt = (
-                '以下是一段从图片中OCR提取的中文小说文本。'
-                '请修正其中的OCR识别错误（如错别字、标点符号错误、断行不当等），'
-                '保持原文内容不变，只修正明显的识别错误。'
-                '直接返回修正后的文本，不要添加任何解释。\n\n'
-                f'{text}'
-            )
+            prompt = f'{CORRECT_OCR_SYSTEM_PROMPT}\n\n以下是需要纠正的文本：\n\n{text}'
         
         payload = {
             'model': self.text_model,

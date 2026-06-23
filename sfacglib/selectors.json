@@ -143,33 +143,33 @@
 
   "comic_info": {
     "container": {
-      "selector": ".comic_Serial_list",
-      "description": "Comic chapter list container"
+      "selector": ".synopsises_font",
+      "description": "Comic info container"
     },
     "title": {
-      "selector": "title",
-      "description": "Comic title from page title tag"
+      "selector": ".synopsises_font span:first-child",
+      "description": "Comic title"
     },
     "cover": {
-      "selector": ".book_info img",
+      "selector": ".synopsises_font .cover img",
       "attr": "src",
       "description": "Comic cover image"
     },
     "labels": {
-      "selector": ".book_info2",
-      "description": "Comic tags/labels"
+      "selector": ".synopsises_font",
+      "description": "Comic tags/labels (parse from text)"
     },
     "stats": {
-      "selector": ".book_info3",
-      "description": "Comic stats"
+      "selector": ".synopsises_font",
+      "description": "Comic stats (parse from text)"
     },
     "interactions": {
-      "selector": ".book_interact",
+      "selector": ".interaction_Focus",
       "description": "Favorites, likes, etc."
     },
     "description": {
-      "selector": ".book_profile",
-      "description": "Comic description/synopsis"
+      "selector": ".synopsises_font",
+      "description": "Comic description/synopsis (first paragraph)"
     },
     "chapter_list": {
       "selector": ".comic_Serial_list a",

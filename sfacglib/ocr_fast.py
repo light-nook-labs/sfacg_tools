@@ -79,6 +79,18 @@ def find_line_gaps(gray_array: np.ndarray, min_gap: int = 5) -> list[tuple[int, 
     return gaps
 
 
+def gaps_to_lines_bounds(gaps: list[tuple[int, int]], height: int, min_gap: int = 5, min_height: int = 10) -> list[tuple[int, int]]:
+    lines_bounds = []
+    prev = 0
+    for gap_start, gap_end in gaps:
+        if gap_start - prev >= min_height:
+            lines_bounds.append((prev, gap_start))
+        prev = gap_end
+    if height - prev >= min_height:
+        lines_bounds.append((prev, height))
+    return lines_bounds
+
+
 def _find_text_start_vectorized(line_gray: np.ndarray, min_stroke_run: int = 10) -> int:
     lh, lw = line_gray.shape
     for y in range(lh):
@@ -161,14 +173,7 @@ def ocr_gif(gif_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: int =
         h, w = gray.shape
 
         gaps = find_line_gaps(gray, min_gap=5)
-        lines_bounds = []
-        prev = 0
-        for gap_start, gap_end in gaps:
-            if gap_start - prev >= 10:
-                lines_bounds.append((prev, gap_start))
-            prev = gap_end
-        if h - prev >= 10:
-            lines_bounds.append((prev, h))
+        lines_bounds = gaps_to_lines_bounds(gaps, h, min_gap=5, min_height=10)
 
         logger.info(f'ocr_gif (fast): frame {frame_idx}, {w}x{h}, {len(lines_bounds)} lines')
 
@@ -215,14 +220,7 @@ def remove_pinyin(gif_bytes: bytes) -> list[Image.Image]:
         h, w = gray.shape
 
         gaps = find_line_gaps(gray, min_gap=5)
-        lines_bounds = []
-        prev = 0
-        for gap_start, gap_end in gaps:
-            if gap_start - prev >= 10:
-                lines_bounds.append((prev, gap_start))
-            prev = gap_end
-        if h - prev >= 10:
-            lines_bounds.append((prev, h))
+        lines_bounds = gaps_to_lines_bounds(gaps, h, min_gap=5, min_height=10)
 
         de_pinyin = _remove_pinyin_from_image(gray, lines_bounds)
         result_img = Image.fromarray(de_pinyin)
@@ -284,14 +282,7 @@ def ocr_image(image_source: str | Path, workers: int = OCR_WORKERS, cpu_num_thre
 
     gray = np.array(cropped.convert('L'))
     gaps = find_line_gaps(gray, min_gap=5)
-    lines_bounds = []
-    prev = 0
-    for gap_start, gap_end in gaps:
-        if gap_start - prev >= 10:
-            lines_bounds.append((prev, gap_start))
-        prev = gap_end
-    if gray.shape[0] - prev >= 10:
-        lines_bounds.append((prev, gray.shape[0]))
+    lines_bounds = gaps_to_lines_bounds(gaps, gray.shape[0], min_gap=5, min_height=10)
 
     de_pinyin = _remove_pinyin_from_image(gray, lines_bounds)
     line_images = _extract_line_images(de_pinyin, lines_bounds)
@@ -315,7 +306,13 @@ def ocr_image(image_source: str | Path, workers: int = OCR_WORKERS, cpu_num_thre
 
 
 def ocr_bytes(image_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: int = 4) -> str:
-    return ocr_gif(image_bytes, workers, cpu_num_threads)
+    from PIL import Image
+    from io import BytesIO
+    img = Image.open(BytesIO(image_bytes))
+    if img.format == 'GIF':
+        return ocr_gif(image_bytes, workers, cpu_num_threads)
+    else:
+        return ocr_image(img, workers, cpu_num_threads)
 
 
 def ocr_gif_with_llm(
@@ -406,14 +403,8 @@ def prepare_lines_as_images(gif_bytes: bytes) -> list[Image.Image]:
             continue
         gray = np.array(cropped.convert('L'))
         gaps = find_line_gaps(gray, min_gap=5)
-        lines = []
-        prev = 0
-        for gap_start, gap_end in gaps:
-            if gap_start - prev >= 10:
-                lines.append(cropped.crop((0, prev, cropped.width, gap_start)))
-            prev = gap_end
-        if cropped.height - prev >= 10:
-            lines.append(cropped.crop((0, prev, cropped.width, cropped.height)))
+        lines_bounds = gaps_to_lines_bounds(gaps, cropped.height, min_gap=5, min_height=10)
+        lines = [cropped.crop((0, top, cropped.width, bottom)) for top, bottom in lines_bounds]
         for line in lines:
             h = line.height
             crop_top = int(h * 0.2)
@@ -433,12 +424,5 @@ def image_to_bytes(image: Image.Image, format: str = 'PNG') -> bytes:
 def split_lines(image: Image.Image, min_gap: int = 5, min_height: int = 10) -> list[Image.Image]:
     gray = np.array(image.convert('L'))
     gaps = find_line_gaps(gray, min_gap)
-    lines = []
-    prev = 0
-    for gap_start, gap_end in gaps:
-        if gap_start - prev >= min_height:
-            lines.append(image.crop((0, prev, image.width, gap_start)))
-        prev = gap_end
-    if image.height - prev >= min_height:
-        lines.append(image.crop((0, prev, image.width, image.height)))
-    return lines
+    lines_bounds = gaps_to_lines_bounds(gaps, image.height, min_gap=min_gap, min_height=min_height)
+    return [image.crop((0, top, image.width, bottom)) for top, bottom in lines_bounds]

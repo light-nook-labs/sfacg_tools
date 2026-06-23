@@ -11,8 +11,9 @@ Multi-content-type web scraper for [SF Light Novel (sfacg.com)](https://book.sfa
 ```
 sfacglib/
   __init__.py     # Package exports
+  models.py       # Pydantic data models (SearchItem, Catalog, CatalogSection, CatalogItem)
   base.py         # Abstract base classes: Container, Section, Item
-  config.py       # Centralized constants (URLs, paths, workers)
+  config.py       # Centralized constants + Pydantic Settings
   fetcher.py      # Smart HTTP fetcher (rotating UA, retry, rate limiting, auth)
   auth.py         # Login, session persistence, cookie management
   selectors.py    # CSS selector registry (loads from selectors.json)
@@ -30,8 +31,8 @@ sfacglib/
   web_llm_vision.py # Browser-based LLM Vision (DeepSeek)
   chatbot.py      # Agent with tool calling (OCR, pinyin removal, batch ops)
   nlp.py          # NLP post-processing (merge wrapped lines)
-  progress.py     # Progress tracking with SQLite
-  utils.py        # Shared utilities
+  progress.py     # Progress tracking with SQLite (finalize_task for completion)
+  utils.py        # Shared utilities (sanitize_filename, fix_url_protocol)
   audiobooks.json # Cached audiobook catalog
   ui/
     __init__.py   # UI entry point
@@ -90,6 +91,16 @@ VIP chapters detected via `.icn_vip` badge. Downloaded as `.gif` files, OCR is a
 ### Search API
 
 `search.py` provides novel/comic search via `s.sfacg.com` HTML scraping and `m.sfacg.com` JSON API. Also supports related novels (`get_related`) and author works (`get_author_works`). See [README.md](README.md#搜索) for usage.
+
+### Pydantic Models
+
+`models.py` defines data models for type safety and validation:
+- `SearchItem` — search results
+- `Catalog` — nested catalog structure (with `load()`/`save()`/`_migrate()`)
+- `CatalogSection` — volume/chapter section
+- `CatalogItem` — individual chapter/page
+
+`config.py` uses `pydantic-settings` for `.env` configuration via the `Settings` class.
 
 ## Coding Conventions
 

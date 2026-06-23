@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import random
 
-from .config import DEFAULT_DELAY, MAX_RETRIES, TIMEOUT
+from .config import DEFAULT_DELAY, MAX_RETRIES, TIMEOUT, COOKIE_DOMAIN
 
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
@@ -155,7 +155,12 @@ class Fetcher:
     def get_json(self, url: str, params: dict | None = None) -> dict | list:
         """Fetch JSON response."""
         resp = self.get(url, params=params)
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as e:
+            logger.error(f'Invalid JSON response from {url}: {e}')
+            logger.debug(f'Response text: {resp.text[:500]}')
+            raise
 
     def get_binary(self, url: str) -> bytes:
         """Fetch binary content (images, audio, etc)."""
@@ -166,7 +171,7 @@ class Fetcher:
         """Set custom rate limit delay for a specific domain."""
         self.rate_limiter.set_delay(domain, delay)
 
-    def set_cookies(self, cookies: dict[str, str], domain: str = '.sfacg.com'):
+    def set_cookies(self, cookies: dict[str, str], domain: str = COOKIE_DOMAIN):
         """Set cookies for session persistence."""
         for name, value in cookies.items():
             self.session.cookies.set(name, value, domain=domain)

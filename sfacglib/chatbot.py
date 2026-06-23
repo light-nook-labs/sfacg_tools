@@ -1,9 +1,9 @@
 import json
-import os
 import subprocess
 from pathlib import Path
 from openai import OpenAI
 from loguru import logger
+from .config import settings, CHATBOT_MAX_FILE_SIZE, CORRECT_OCR_SYSTEM_PROMPT
 
 AGENT_SYSTEM_PROMPT = """你是 SFACG Spider 的智能助手，可以通过自然语言帮助用户完成任务。
 
@@ -184,22 +184,6 @@ TOOLS = [
     },
 ]
 
-CORRECT_OCR_SYSTEM_PROMPT = """你是一个专业的中文OCR文本纠错助手。你的任务是纠正OCR识别产生的错误，包括：
-
-1. 乱码/错别字：修正识别错误的汉字（如"已"→"己"，"末"→"未"）
-2. 标点符号：修正全角/半角混用、缺失的标点
-3. 段落断行：合并被错误断开的句子，保留合理的段落分隔
-4. OCR伪影：删除页码、页眉页脚、乱码符号等非正文内容
-5. 繁简转换：如有需要，统一为简体中文
-
-规则：
-- 保持原文风格和语气不变
-- 不要添加或删减内容
-- 不要改变原文意思
-- 只修正明显的OCR错误，不要"润色"文字
-- 如果原文看起来已经正确，直接返回原文
-- 返回纠正后的纯文本，不要加任何解释"""
-
 
 class ChatBot:
 
@@ -211,9 +195,9 @@ class ChatBot:
         system_prompt: str = '',
         max_turns: int = 30,
     ):
-        self.base_url = base_url or os.environ.get('CHATBOT_BASE_URL', '')
-        self.api_key = api_key or os.environ.get('CHATBOT_API_KEY', '')
-        self.model = model or os.environ.get('CHATBOT_MODEL', '')
+        self.base_url = base_url or settings.chatbot_base_url
+        self.api_key = api_key or settings.chatbot_api_key
+        self.model = model or settings.chatbot_model
 
         if not self.base_url or not self.api_key or not self.model:
             raise ValueError(
@@ -292,7 +276,8 @@ class ChatBot:
     def _validate_path(self, path: str) -> Path:
         p = Path(path).resolve()
         project_root = Path(__file__).parent.parent.resolve()
-        if not (p == project_root or project_root in p.parents):
+        cwd = Path.cwd().resolve()
+        if not (p == project_root or project_root in p.parents or p == cwd or cwd in p.parents):
             raise ValueError(f'Path outside project directory: {path}')
         return p
 
@@ -303,7 +288,7 @@ class ChatBot:
             return str(e)
         if not p.exists():
             return f'File not found: {path}'
-        if p.stat().st_size > 500_000:
+        if p.stat().st_size > CHATBOT_MAX_FILE_SIZE:
             return f'File too large ({p.stat().st_size} bytes). Read a smaller file or use list_dir first.'
         return p.read_text(encoding='utf-8')
 
@@ -335,7 +320,10 @@ class ChatBot:
 
     def _tool_remove_pinyin(self, input_path: str, output_path: str = '') -> str:
         from .ocr_fast import remove_pinyin_gif
-        p = Path(input_path)
+        try:
+            p = self._validate_path(input_path)
+        except ValueError as e:
+            return str(e)
         if not p.exists():
             return f'File not found: {input_path}'
         if not p.suffix.lower() == '.gif':
@@ -350,7 +338,10 @@ class ChatBot:
     def _tool_ocr_gif(self, input_path: str, output_path: str = '') -> str:
         from .ocr_fast import ocr_gif
         from .nlp import merge_wrapped_lines
-        p = Path(input_path)
+        try:
+            p = self._validate_path(input_path)
+        except ValueError as e:
+            return str(e)
         if not p.exists():
             return f'File not found: {input_path}'
         gif_bytes = p.read_bytes()
@@ -376,7 +367,10 @@ class ChatBot:
         return resp.choices[0].message.content or text
 
     def _tool_correct_ocr_file(self, input_path: str, output_path: str = '', context: str = '') -> str:
-        p = Path(input_path)
+        try:
+            p = self._validate_path(input_path)
+        except ValueError as e:
+            return str(e)
         if not p.exists():
             return f'File not found: {input_path}'
         text = p.read_text(encoding='utf-8')
@@ -387,7 +381,10 @@ class ChatBot:
         return f'Done: {out} ({len(corrected)} chars)'
 
     def _tool_batch_remove_pinyin(self, dir_path: str, pattern: str = '*.gif') -> str:
-        d = Path(dir_path)
+        try:
+            d = self._validate_path(dir_path)
+        except ValueError as e:
+            return str(e)
         if not d.exists():
             return f'Directory not found: {dir_path}'
         files = sorted(d.rglob(pattern))
@@ -404,7 +401,10 @@ class ChatBot:
         return '\n'.join(results)
 
     def _tool_batch_ocr(self, dir_path: str, pattern: str = '*.gif') -> str:
-        d = Path(dir_path)
+        try:
+            d = self._validate_path(dir_path)
+        except ValueError as e:
+            return str(e)
         if not d.exists():
             return f'Directory not found: {dir_path}'
         files = sorted(d.rglob(pattern))
@@ -421,7 +421,10 @@ class ChatBot:
         return '\n'.join(results)
 
     def _tool_batch_correct_ocr(self, dir_path: str, pattern: str = '*.txt', context: str = '') -> str:
-        d = Path(dir_path)
+        try:
+            d = self._validate_path(dir_path)
+        except ValueError as e:
+            return str(e)
         if not d.exists():
             return f'Directory not found: {dir_path}'
         files = sorted(d.rglob(pattern))

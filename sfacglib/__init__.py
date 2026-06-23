@@ -21,7 +21,9 @@ from .config import (
     WORKERS_CHAPTER, WORKERS_IMAGE, WORKERS_AUDIO_CHAPTER,
     WORKERS_AUDIO_VOLUME, WORKERS_EPUB_IMG,
     VIP_IMAGE_WIDTH, OCR_STRIP_HEIGHT, OCR_WORKERS, OCR_BRIGHTNESS_THRESHOLD,
+    Settings, settings,
 )
+from .models import SearchItem, CatalogItem, CatalogSection, Catalog
 from .fetcher import Fetcher
 from .auth import Auth
 from .selectors import Selectors, SelectorError
@@ -65,5 +67,7 @@ __all__ = [
     'DeepSeekWebOCR', 'split_by_height', 'resize_to_max', 'deduplicate_texts',
     'ChatBot', 'interactive_chat',
     'search_novel', 'search_comic', 'search', 'search_api', 'get_related', 'get_author_works', 'SearchResult',
+    'SearchItem', 'CatalogItem', 'CatalogSection', 'Catalog',
+    'Settings', 'settings',
     'VIP_IMAGE_WIDTH', 'OCR_STRIP_HEIGHT', 'OCR_WORKERS', 'OCR_BRIGHTNESS_THRESHOLD',
 ]

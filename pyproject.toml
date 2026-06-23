@@ -11,7 +11,10 @@ dependencies = [
     "loguru>=0.7.3",
     "openai>=1.0.0",
     "Pillow>=10.0.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
     "python-dotenv>=1.0.0",
+    "reportlab>=5.0.0",
     "requests>=2.34.2",
     "tqdm>=4.67.0",
 ]
@@ -27,3 +30,8 @@ web = [
 
 [project.scripts]
 sfacg = "main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

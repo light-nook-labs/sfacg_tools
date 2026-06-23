@@ -1,30 +1,30 @@
 import re
-from dataclasses import dataclass
 from loguru import logger
 from bs4 import BeautifulSoup, Tag
 from .fetcher import Fetcher
-from .config import SEARCH_BASE, API_HTML5, PC_BASE
+from .config import SEARCH_BASE, API_HTML5, PC_BASE, SEARCH_SNIPPET_LENGTH
+from .models import SearchItem
+from .utils import fix_url_protocol
 
 
 COVER_BASE = 'https://rs.sfacg.com/web/novel/images/NovelCover/Big'
 
-
-@dataclass
-class SearchResult:
-    id: str
-    title: str
-    author: str
-    cover: str
-    url: str
-    snippet: str
-    updated: str
-    type: str
-    score: float
+SearchResult = SearchItem
 
 
-def _parse_html_results(html: str, search_type: str) -> list[SearchResult]:
+def _deduplicate(results: list[SearchItem]) -> list[SearchItem]:
+    seen = set()
+    unique = []
+    for r in results:
+        if r.id not in seen:
+            seen.add(r.id)
+            unique.append(r)
+    return unique
+
+
+def _parse_html_results(html: str, search_type: str) -> list[SearchItem]:
     soup = BeautifulSoup(html, 'html.parser')
-    results: list[SearchResult] = []
+    results: list[SearchItem] = []
 
     for ul in soup.find_all('ul'):
         items = ul.find_all('li', recursive=False)
@@ -56,9 +56,7 @@ def _parse_html_results(html: str, search_type: str) -> list[SearchResult]:
         img = items[0].find('img')
         if img:
             src = img.get('src', '')
-            if src.startswith('//'):
-                src = 'https:' + src
-            cover = src
+            cover = fix_url_protocol(src)
 
         text = items[1].get_text()
         author = ''
@@ -73,25 +71,19 @@ def _parse_html_results(html: str, search_type: str) -> list[SearchResult]:
             if isinstance(child, str):
                 s = child.strip()
                 if s and len(s) > 20 and '综合信息' not in s:
-                    snippet = s[:200]
+                    snippet = s[:SEARCH_SNIPPET_LENGTH]
                     break
 
-        results.append(SearchResult(
+        results.append(SearchItem(
             id=novel_id, title=title, author=author, cover=cover,
             url=href, snippet=snippet, updated=updated,
             type=search_type, score=0.0,
         ))
 
-    seen = set()
-    unique = []
-    for r in results:
-        if r.id not in seen:
-            seen.add(r.id)
-            unique.append(r)
-    return unique
+    return _deduplicate(results)
 
 
-def search_novel(keyword: str, fetcher: Fetcher | None = None) -> list[SearchResult]:
+def search_novel(keyword: str, fetcher: Fetcher | None = None) -> list[SearchItem]:
     fetcher = fetcher or Fetcher()
     url = f'{SEARCH_BASE}/?Key={keyword}&S=1&SS=0'
     logger.info(f'Searching novels: {keyword}')
@@ -101,7 +93,7 @@ def search_novel(keyword: str, fetcher: Fetcher | None = None) -> list[SearchRes
     return results
 
 
-def search_comic(keyword: str, fetcher: Fetcher | None = None) -> list[SearchResult]:
+def search_comic(keyword: str, fetcher: Fetcher | None = None) -> list[SearchItem]:
     fetcher = fetcher or Fetcher()
     url = f'{SEARCH_BASE}/?Key={keyword}&S=0&SS=0'
     logger.info(f'Searching comics: {keyword}')
@@ -111,13 +103,13 @@ def search_comic(keyword: str, fetcher: Fetcher | None = None) -> list[SearchRes
     return results
 
 
-def search(keyword: str, search_type: str = 'novel', fetcher: Fetcher | None = None) -> list[SearchResult]:
+def search(keyword: str, search_type: str = 'novel', fetcher: Fetcher | None = None) -> list[SearchItem]:
     if search_type == 'comic':
         return search_comic(keyword, fetcher)
     return search_novel(keyword, fetcher)
 
 
-def search_api(keyword: str, fetcher: Fetcher | None = None) -> list[SearchResult]:
+def search_api(keyword: str, fetcher: Fetcher | None = None) -> list[SearchItem]:
     fetcher = fetcher or Fetcher()
     logger.info(f'API search: {keyword}')
     data = fetcher.get_json(API_HTML5, params={'op': 'search', 'keyword': keyword})
@@ -127,7 +119,7 @@ def search_api(keyword: str, fetcher: Fetcher | None = None) -> list[SearchResul
         cover = n.get('NovelCover', '')
         if cover:
             cover = f'{COVER_BASE}/{cover}'
-        results.append(SearchResult(
+        results.append(SearchItem(
             id=str(n.get('NovelID', '')),
             title=n.get('NovelName', ''),
             author=n.get('AuthorName', ''),
@@ -142,14 +134,14 @@ def search_api(keyword: str, fetcher: Fetcher | None = None) -> list[SearchResul
     return results
 
 
-def get_related(novel_id: str, fetcher: Fetcher | None = None) -> list[SearchResult]:
+def get_related(novel_id: str, fetcher: Fetcher | None = None) -> list[SearchItem]:
     fetcher = fetcher or Fetcher()
     url = f'{PC_BASE}/Novel/{novel_id}/'
     logger.info(f'Fetching related novels for {novel_id}')
     html = fetcher.get_html(url)
     soup = BeautifulSoup(html, 'html.parser')
 
-    results: list[SearchResult] = []
+    results: list[SearchItem] = []
 
     for item in soup.select('.read-list .item'):
         a = item.select_one('a[href*="/Novel/"]')
@@ -165,35 +157,27 @@ def get_related(novel_id: str, fetcher: Fetcher | None = None) -> list[SearchRes
         cover = ''
         if img:
             src = img.get('src', '')
-            if src.startswith('//'):
-                src = 'https:' + src
-            cover = src
+            cover = fix_url_protocol(src)
 
-        results.append(SearchResult(
+        results.append(SearchItem(
             id=nid, title=title, author='', cover=cover,
             url=f'{PC_BASE}/Novel/{nid}', snippet='',
             updated='', type='novel', score=0.0,
         ))
 
-    seen = set()
-    unique = []
-    for r in results:
-        if r.id not in seen:
-            seen.add(r.id)
-            unique.append(r)
-
+    unique = _deduplicate(results)
     logger.info(f'Found {len(unique)} related novels for {novel_id}')
     return unique
 
 
-def get_author_works(novel_id: str, fetcher: Fetcher | None = None) -> list[SearchResult]:
+def get_author_works(novel_id: str, fetcher: Fetcher | None = None) -> list[SearchItem]:
     fetcher = fetcher or Fetcher()
     url = f'{PC_BASE}/Novel/{novel_id}/'
     logger.info(f'Fetching author works for {novel_id}')
     html = fetcher.get_html(url)
     soup = BeautifulSoup(html, 'html.parser')
 
-    results: list[SearchResult] = []
+    results: list[SearchItem] = []
     for h3 in soup.select('h3'):
         if '作者' not in h3.get_text() or '作品' not in h3.get_text():
             continue
@@ -211,19 +195,13 @@ def get_author_works(novel_id: str, fetcher: Fetcher | None = None) -> list[Sear
             title = a.get_text(strip=True)
             if not title:
                 continue
-            results.append(SearchResult(
+            results.append(SearchItem(
                 id=nid, title=title, author='', cover='',
                 url=f'{PC_BASE}/Novel/{nid}', snippet='',
                 updated='', type='novel', score=0.0,
             ))
 
-    seen = set()
-    unique = []
-    for r in results:
-        if r.id not in seen:
-            seen.add(r.id)
-            unique.append(r)
-
+    unique = _deduplicate(results)
     logger.info(f'Found {len(unique)} author works for {novel_id}')
     return unique
 

@@ -128,6 +128,15 @@ class ProgressTracker:
             )
             self.conn.commit()
 
+    def finalize_task(self, task_id: str):
+        self.mark_task_done(task_id)
+        pending = self.get_pending(task_id)
+        if not pending:
+            self.delete_task(task_id)
+            logger.bind(force=True).info(f'任务完成，已清理记录: {task_id}')
+        else:
+            logger.warning(f'任务有 {len(pending)} 个失败项，保留记录')
+
     def delete_task(self, task_id: str):
         with self._lock:
             self.conn.execute('DELETE FROM chapters WHERE task_id=?', (task_id,))
@@ -161,10 +170,18 @@ class ProgressTracker:
     def summary(self, task_id: str) -> dict:
         with self._lock:
             task = self.conn.execute('SELECT id, type, title, output_dir, format, total, completed, status, created_at, updated_at FROM tasks WHERE id=?', (task_id,)).fetchone()
-        if not task:
-            return {}
-        total = self.get_total(task_id)
-        done = self.get_done_count(task_id)
+            if not task:
+                return {}
+            total_row = self.conn.execute(
+                'SELECT COUNT(*) FROM chapters WHERE task_id=?',
+                (task_id,),
+            ).fetchone()
+            total = total_row[0] if total_row else 0
+            done_row = self.conn.execute(
+                'SELECT COUNT(*) FROM chapters WHERE task_id=? AND status=?',
+                (task_id, 'done'),
+            ).fetchone()
+            done = done_row[0] if done_row else 0
         return {
             'id': task[0],
             'type': task[1],

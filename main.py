@@ -12,25 +12,18 @@ Usage:
     uv run python main.py app
 """
 import sys
-import re
 import argparse
 from pathlib import Path
-from dotenv import load_dotenv
 from loguru import logger
 from sfacglib.fetcher import Fetcher
 from sfacglib.progress import ProgressTracker
-
-load_dotenv()
+from sfacglib.utils import sanitize_filename
 
 
 def _get_fetcher() -> Fetcher:
     f = Fetcher()
     f.auto_auth()
     return f
-
-
-def _sanitize_filename(name: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', '_', name).strip()
 
 
 def cmd_novel(args):
@@ -60,7 +53,7 @@ def cmd_chapter(args):
     content = md if args.format == 'md' else html
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f'{_sanitize_filename(ch.title)}.{args.format}'
+    path = out / f'{sanitize_filename(ch.title)}.{args.format}'
     path.write_text(content, encoding='utf-8')
     logger.bind(force=True).info(f'Done: {path}')
 
