@@ -166,13 +166,22 @@ def cmd_web(args):
 
 
 def cmd_search(args):
-    from sfacglib.search import search_novel
-    results = search_novel(args.keyword)
+    from sfacglib.search import search, search_api, get_related, get_author_works
+    if args.related:
+        results = get_related(args.keyword)
+    elif args.author_works:
+        results = get_author_works(args.keyword)
+    elif args.api:
+        results = search_api(args.keyword)
+    else:
+        search_type = 'comic' if args.comic else 'novel'
+        results = search(args.keyword, search_type)
     if not results:
         logger.bind(force=True).info('No results found')
         return
     for i, r in enumerate(results, 1):
-        print(f'{i:2}. [{r.id}] {r.title}')
+        score = f' ({r.score})' if r.score else ''
+        print(f'{i:2}. [{r.id}] {r.title}{score}')
         if r.author:
             print(f'    Author: {r.author}  Updated: {r.updated}')
         if r.snippet:
@@ -300,8 +309,12 @@ def main():
     p_web.add_argument('--port', type=int, default=8888, help='Port to bind')
     p_web.set_defaults(func=cmd_web)
 
-    p_search = sub.add_parser('search', help='Search novels by keyword')
-    p_search.add_argument('keyword', help='Search keyword')
+    p_search = sub.add_parser('search', help='Search novels or comics by keyword')
+    p_search.add_argument('keyword', help='Search keyword or novel ID (for --related/--author-works)')
+    p_search.add_argument('--comic', '-c', action='store_true', help='Search comics instead of novels')
+    p_search.add_argument('--api', action='store_true', help='Use JSON API (faster, returns scores)')
+    p_search.add_argument('--related', '-r', action='store_true', help='Get related novels (keyword = novel ID)')
+    p_search.add_argument('--author-works', '-a', action='store_true', help='Get author works (keyword = novel ID)')
     p_search.set_defaults(func=cmd_search)
 
     p_ocr = sub.add_parser('ocr', help='OCR image to text')
