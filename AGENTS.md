@@ -12,20 +12,19 @@ Multi-content-type web scraper for [SF Light Novel (sfacg.com)](https://book.sfa
 sfacglib/
   __init__.py     # Package exports
   models.py       # Pydantic data models (SearchItem, Catalog, CatalogSection, CatalogItem)
-  base.py         # Abstract base classes: Container, Section, Item
+  base.py         # Abstract base classes: Container, Section, Item + _filter_items
   config.py       # Centralized constants + Pydantic Settings
   fetcher.py      # Smart HTTP fetcher (rotating UA, retry, rate limiting, auth)
-  auth.py         # Login, session persistence, cookie management
+  auth.py         # Login, session persistence, cookie management (GetLoginInfo API)
   selectors.py    # CSS selector registry (loads from selectors.json)
   selectors.json  # All CSS selectors, organized by page type
-  ch.py           # Chapter content fetcher (mobile + PC + VIP endpoints)
+  ch.py           # Chapter content fetcher + VIP processing (OCR/LLM/RAW/DEEPSEEK_WEB)
   novel.py        # Novel downloader (NovelVolume, NovelChapter, ReviewComment)
   comic.py        # Comic downloader (ComicChapter, ComicPage)
   audio.py        # Audiobook downloader (AudioVolume, AudioChapter)
   epub.py         # EPUB generation with three-level TOC
   convert.py      # Format conversion (HTML, EPUB, PDF — auto-detect novel/comic)
   search.py       # Search API (keyword, related novels, author works)
-  vip.py          # VIP chapter processing (image download, GIF→PNG, OCR pipeline)
   ocr_fast.py     # OCR engine (RapidOCR, smart pinyin removal, rec_only, parallel)
   llm_vision.py   # LLM Vision API for OCR
   web_llm_vision.py # Browser-based LLM Vision (DeepSeek)
@@ -79,6 +78,8 @@ All CSS selectors live in `sfacglib/selectors.json`. When selectors break, updat
 ### Authentication
 
 SFACG login requires Tencent CAPTCHA. Import cookies from browser DevTools. See [README.md](README.md#登录) for instructions.
+
+Cookie validation uses `passport.sfacg.com/Ajax/GetLoginInfo.ashx` API (not HTML parsing, since PC site loads user info via AJAX). Cookies are set in request header directly for correct domain matching.
 
 ### VIP Chapter Processing
 

@@ -35,7 +35,7 @@ from .audio import Audio, AudioChapter, AudioVolume
 from .epub import download_epub, convert_html_to_epub, convert_md_to_epub
 from .progress import ProgressTracker
 from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks
-from .vip import VipMode, process_vip_chapter
+from .ch import VipMode, process_vip_chapter
 from .ocr_fast import (
     ocr_image, ocr_bytes, ocr_gif,
     prepare_lines_as_images, image_to_bytes,

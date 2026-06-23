@@ -155,12 +155,13 @@ PDF 输出特性：
 
 SFACG 需要 Cookie 登录：
 
-1. 浏览器打开 https://m.sfacg.com/ 并登录
+1. 浏览器打开 https://book.sfacg.com/ 并登录
 2. F12 → Network → 刷新页面 → 复制任意请求的 `Cookie` 头
 3. 写入 `.env` 文件的 `COOKIE=` 字段
 
 > [!NOTE]
 > Cookie 文件存储在 `~/.config/sfacg/.cookies.json`，权限为 `0600`（仅当前用户可读写）。
+> 验证使用 `passport.sfacg.com/Ajax/GetLoginInfo.ashx` API，PC 站用户信息通过 AJAX 加载，不在 HTML 中。
 
 ### ChatBot Agent
 
@@ -379,20 +380,19 @@ print(settings.llm_api_key)
 ```
 sfacglib/
   models.py         # Pydantic 数据模型（SearchItem, Catalog 等）
-  base.py           # 抽象基类：Container, Section, Item
+  base.py           # 抽象基类：Container, Section, Item + _filter_items
   config.py         # 集中常量 + Pydantic Settings
   fetcher.py        # HTTP 请求（轮换 UA、重试、限速、认证）
-  auth.py           # Cookie 管理
+  auth.py           # Cookie 管理（GetLoginInfo API 验证）
   selectors.py      # CSS 选择器注册表
   selectors.json    # CSS 选择器定义
-  ch.py             # 章节内容抓取（移动端 + PC + VIP）
+  ch.py             # 章节内容抓取 + VIP 处理（OCR/LLM/RAW）
   novel.py          # 小说下载器
   comic.py          # 漫画下载器
   audio.py          # 有声下载器
   epub.py           # EPUB 生成
   convert.py        # 格式转换（小说/漫画 → HTML/EPUB/PDF）
   search.py         # 搜索 API（关键词、相关推荐、作者作品）
-  vip.py            # VIP 章节处理
   ocr_fast.py       # OCR 引擎（RapidOCR、去拼音、rec_only、并行）
   chatbot.py        # Agent（tool calling、OCR 纠错）
   nlp.py            # NLP 后处理（合并断行）

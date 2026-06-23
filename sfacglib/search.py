@@ -177,6 +177,11 @@ def get_author_works(novel_id: str, fetcher: Fetcher | None = None) -> list[Sear
     html = fetcher.get_html(url)
     soup = BeautifulSoup(html, 'html.parser')
 
+    author = ''
+    author_el = soup.select_one('.author-name')
+    if author_el:
+        author = author_el.get_text(strip=True)
+
     results: list[SearchItem] = []
     for h3 in soup.select('h3'):
         if '作者' not in h3.get_text() or '作品' not in h3.get_text():
@@ -196,7 +201,7 @@ def get_author_works(novel_id: str, fetcher: Fetcher | None = None) -> list[Sear
             if not title:
                 continue
             results.append(SearchItem(
-                id=nid, title=title, author='', cover='',
+                id=nid, title=title, author=author, cover='',
                 url=f'{PC_BASE}/Novel/{nid}', snippet='',
                 updated='', type='novel', score=0.0,
             ))

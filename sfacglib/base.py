@@ -59,15 +59,15 @@ class Container(ABC):
     def get_sections(self) -> list[Section]:
         ...
 
-    def _filter_sections(
+    def _filter_items(
         self,
         sections: list[Section],
         start: str | None = None,
         end: str | None = None,
         range_str: str | None = None,
         filter_str: str | None = None,
-    ) -> list[Section]:
-        all_items = []
+    ) -> list[tuple[Section, Item]]:
+        all_items: list[tuple[Section, Item]] = []
         for section in sections:
             for item in section.get_items():
                 all_items.append((section, item))
@@ -101,7 +101,7 @@ class Container(ABC):
             all_items = filtered
 
         if range_str:
-            ids = set()
+            ids: set[str] = set()
             is_index = False
             for part in range_str.split(','):
                 part = part.strip()
@@ -141,9 +141,21 @@ class Container(ABC):
                         filtered.append((s, i))
                 all_items = filtered
 
-        seen_sections = []
-        seen_ids = set()
-        for s, _ in all_items:
+        return all_items
+
+    def _filter_sections(
+        self,
+        sections: list[Section],
+        start: str | None = None,
+        end: str | None = None,
+        range_str: str | None = None,
+        filter_str: str | None = None,
+    ) -> list[Section]:
+        filtered_items = self._filter_items(sections, start, end, range_str, filter_str)
+
+        seen_sections: list[Section] = []
+        seen_ids: set[int] = set()
+        for s, _ in filtered_items:
             if s.idx not in seen_ids:
                 seen_sections.append(s)
                 seen_ids.add(s.idx)
@@ -247,12 +259,7 @@ class Container(ABC):
 
         info_md, info_html = self.get_info()
         sections = self.get_sections()
-        sections = self._filter_sections(sections, start, end, range_str, filter_str)
-
-        all_items = []
-        for section in sections:
-            for item in section.get_items():
-                all_items.append((section, item))
+        all_items = self._filter_items(sections, start, end, range_str, filter_str)
 
         if not all_items:
             logger.error('没有可下载的内容')
@@ -274,7 +281,9 @@ class Container(ABC):
         catalog = Catalog(
             id=self.id,
             title=self.title,
-            intro=info_md,
+            author=self.author,
+            cover=self.cover,
+            intro=self.intro,
         )
 
         catalog.sections = self._download_items(

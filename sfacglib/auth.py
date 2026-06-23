@@ -87,35 +87,41 @@ class Auth:
         if not self._cookies:
             return False
 
-        original_cookies = requests.cookies.RequestsCookieJar()
-        for cookie in session.cookies:
-            original_cookies.set_cookie(cookie)
-        for name, value in self._cookies.items():
-            session.cookies.set(name, value, domain=COOKIE_DOMAIN)
+        # Set cookies in header for correct domain matching
+        cookie_str = '; '.join(f'{k}={v}' for k, v in self._cookies.items())
+        original_header = session.headers.get('cookie', '')
+        session.headers['cookie'] = cookie_str
 
         try:
             resp = session.get(
-                URL_CHECK_AUTH,
+                'https://passport.sfacg.com/Ajax/GetLoginInfo.ashx',
                 headers={'User-Agent': _DEFAULT_UA},
                 timeout=10,
             )
         except requests.RequestException as e:
             logger.warning(f'Cookie validation network error: {e}')
-            session.cookies.clear()
-            session.cookies.update(original_cookies)
+            session.headers['cookie'] = original_header
             return False
 
-        if resp.status_code == 200 and ('退出' in resp.text or 'logout' in resp.text.lower() or '我的' in resp.text):
-            logger.info('Session cookies are valid')
+        if resp.status_code == 200 and 'login:"true"' in resp.text:
+            # Extract nickname from response
+            import re
+            nickname_match = re.search(r'nickname:"([^"]+)"', resp.text)
+            if nickname_match:
+                self.username = nickname_match.group(1)
+            logger.info(f'Session cookies are valid for {self.username}')
             return True
 
         logger.info('Session cookies expired')
-        session.cookies.clear()
-        session.cookies.update(original_cookies)
+        session.headers['cookie'] = original_header
         return False
 
     def apply(self, session: requests.Session):
         """Apply loaded cookies to a requests session."""
+        # Build cookie string and set in header to ensure correct domain matching
+        cookie_str = '; '.join(f'{k}={v}' for k, v in self._cookies.items())
+        session.headers['cookie'] = cookie_str
+        # Also set in cookie jar for compatibility
         for name, value in self._cookies.items():
             session.cookies.set(name, value, domain=COOKIE_DOMAIN)
 

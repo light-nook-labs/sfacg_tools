@@ -69,7 +69,7 @@ URL_AUDIO = f'{MOBILE_BASE}/ai/'
 URL_LOGIN_PC = f'{PASSPORT_BASE}/Login.aspx'
 URL_LOGIN_API_PC = f'{PASSPORT_BASE}/Ajax/QuickLogin.ashx'
 URL_LOGIN_API_MOB = f'{PASSPORT_BASE}/Ajax/QuickLoginCross.ashx'
-URL_CHECK_AUTH = f'{MOBILE_BASE}/'
+URL_CHECK_AUTH = f'{PC_BASE}/'
 
 SELECTORS_PATH: Path = PACKAGE_DIR / 'selectors.json'
 COOKIE_PATH: Path = _CONFIG_DIR / '.cookies.json'
