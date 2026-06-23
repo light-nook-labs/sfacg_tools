@@ -212,9 +212,8 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
   .novel-header { page-break-after: always; }
   .print-toc { display: block; page-break-after: always; }
   .print-toc h2 { font-size: 18pt; margin-bottom: 16pt; border-bottom: 2pt solid #333; padding-bottom: 6pt; }
-  .print-toc .ptoc-vol { margin-bottom: 8pt; }
-  .print-toc .ptoc-vol-name { font-weight: 700; font-size: 12pt; margin-bottom: 2pt; }
-  .print-toc .ptoc-ch { padding-left: 2em; font-size: 10pt; color: #444; }
+  .print-toc .ptoc-vol { font-size: 12pt; margin-bottom: 6pt; }
+  .novel-header .cover { max-width: 60%; margin: 0 auto; }
   .volume > h2 { page-break-before: always; }
   .chapter { page-break-inside: avoid; }
   body { font-size: 11pt; line-height: 1.7; }
@@ -273,12 +272,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
     for sec in sections:
         vol_title = sec['title']
         vol_display = re.sub(r'^【[^】]+】\s*', '', vol_title)
-        html_parts.append(f'<div class="ptoc-vol"><div class="ptoc-vol-name">{html_escape(vol_display)}</div>')
-        for it in items_by_sec.get(sec['idx'], []):
-            ch_t = it.get('item_title', '')
-            if ch_t:
-                html_parts.append(f'<div class="ptoc-ch">{html_escape(ch_t)}</div>')
-        html_parts.append('</div>')
+        html_parts.append(f'<div class="ptoc-vol">{html_escape(vol_display)}</div>')
     html_parts.append('</div>')
 
     if content_type == 'comic' and not local_images:
