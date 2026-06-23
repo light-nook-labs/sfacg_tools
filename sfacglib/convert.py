@@ -105,9 +105,10 @@ def convert_to_html(dir_path: str | Path, local_images: bool = True):
 :root {
   --bg: #fafaf9; --surface: #ffffff; --text: #1c1917; --text2: #57534e;
   --border: #e7e5e4; --accent: #b45309; --accent2: #d97706;
-  --toc-w: 280px;
+  --toc-w: 260px; --content-max: 720px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
 body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
        background: var(--bg); color: var(--text); line-height: 1.9; }
 
@@ -116,58 +117,89 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 /* TOC sidebar */
 .toc { position: fixed; top: 0; left: 0; width: var(--toc-w); height: 100vh;
        overflow-y: auto; background: var(--surface); border-right: 1px solid var(--border);
-       padding: 20px 16px; z-index: 100; transition: transform .3s; }
-.toc-toggle { display: none; position: fixed; top: 12px; left: 12px; z-index: 200;
+       padding: 20px 14px; z-index: 100; transition: transform .3s ease; }
+.toc::-webkit-scrollbar { width: 4px; }
+.toc::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.toc-toggle { display: none; position: fixed; top: 10px; left: 10px; z-index: 200;
               background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-              padding: 6px 10px; cursor: pointer; font-size: 18px; }
-.toc h2 { font-size: 14px; color: var(--text2); text-transform: uppercase; letter-spacing: .1em;
-          margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-.toc a { display: block; padding: 5px 8px; color: var(--text2); text-decoration: none;
+              width: 40px; height: 40px; cursor: pointer; font-size: 20px;
+              box-shadow: 0 2px 8px rgba(0,0,0,.08); line-height: 40px; text-align: center; }
+.toc-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 99; }
+.toc h2 { font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: .08em;
+          margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.toc a { display: block; padding: 4px 8px; color: var(--text2); text-decoration: none;
          font-size: 13px; border-radius: 4px; white-space: nowrap; overflow: hidden;
-         text-overflow: ellipsis; }
+         text-overflow: ellipsis; transition: background .15s; }
 .toc a:hover { background: #f5f5f4; color: var(--text); }
 .toc a.active { background: #fef3c7; color: var(--accent); font-weight: 600; }
 
 /* Main content */
-.main { margin-left: var(--toc-w); max-width: 800px; padding: 40px 32px; }
+.main { margin-left: var(--toc-w); flex: 1; min-width: 0; padding: 40px 48px 60px; }
+.main-inner { max-width: var(--content-max); margin: 0 auto; }
 
 /* Header */
 .novel-header { text-align: center; margin-bottom: 48px; padding-bottom: 32px;
                 border-bottom: 1px solid var(--border); }
-.novel-header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+.novel-header .cover { max-width: 180px; margin: 0 auto 16px; border-radius: 8px;
+                       box-shadow: 0 4px 16px rgba(0,0,0,.12); display: block; }
+.novel-header h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
 .novel-header .author { font-size: 15px; color: var(--text2); }
-.novel-header .meta { font-size: 12px; color: #a8a29e; margin-top: 8px; }
-.novel-header .cover { max-width: 200px; margin: 16px auto; border-radius: 8px;
-                       box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+.novel-header .meta { font-size: 12px; color: #a8a29e; margin-top: 12px;
+                      display: flex; align-items: center; justify-content: center; gap: 6px; }
+.novel-header .meta a { color: #a8a29e; text-decoration: none; display: inline-flex;
+                        align-items: center; gap: 4px; }
+.novel-header .meta a:hover { color: var(--text2); }
+.novel-header .meta img.org-logo { width: 16px; height: 16px; border-radius: 50%;
+                                    vertical-align: middle; }
 
 /* Volume & Chapter */
 .volume { margin-top: 48px; }
-.volume > h2 { font-size: 20px; font-weight: 700; color: var(--accent);
-               padding-bottom: 10px; border-bottom: 2px solid var(--accent2); margin-bottom: 20px; }
-.chapter { margin-bottom: 32px; }
-.chapter > h3 { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
-.chapter p { text-indent: 2em; margin: 0.4em 0; }
+.volume > h2 { font-size: 19px; font-weight: 700; color: var(--accent);
+               padding-bottom: 8px; border-bottom: 2px solid var(--accent2); margin-bottom: 16px; }
+.chapter { margin-bottom: 28px; }
+.chapter > h3 { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.chapter p { text-indent: 2em; margin: 0.35em 0; }
 .chapter img { max-width: 100%; height: auto; display: block; margin: 12px auto;
-               border-radius: 4px; }
+               border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
 
-.generated { text-align: center; font-size: 12px; color: #a8a29e; margin-top: 20px; }
-.generated a { color: #a8a29e; }
+.warning { background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 8px;
+           margin-bottom: 20px; font-size: 14px; }
+
+/* Responsive: tablet */
+@media (max-width: 1024px) {
+  :root { --toc-w: 220px; }
+  .main { padding: 32px 24px 48px; }
+}
+/* Responsive: mobile */
+@media (max-width: 768px) {
+  .toc { transform: translateX(-100%); width: 280px; }
+  .toc.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,.18); }
+  .toc-overlay.open { display: block; }
+  .toc-toggle { display: block; }
+  .main { margin-left: 0; padding: 56px 16px 40px; }
+  .novel-header h1 { font-size: 22px; }
+  .volume > h2 { font-size: 17px; }
+  .chapter > h3 { font-size: 14px; }
+  .chapter p { text-indent: 1.5em; }
+}
+/* Responsive: small phone */
+@media (max-width: 480px) {
+  .main { padding: 52px 12px 32px; }
+  .novel-header .cover { max-width: 120px; }
+  .novel-header h1 { font-size: 20px; }
+}
 
 /* Print */
 @media print {
-  .toc, .toc-toggle { display: none !important; }
+  .toc, .toc-toggle, .toc-overlay { display: none !important; }
   .main { margin-left: 0; max-width: 100%; padding: 0; }
+  .main-inner { max-width: 100%; }
   .novel-header { page-break-after: always; }
   .volume > h2 { page-break-before: always; }
   .chapter { page-break-inside: avoid; }
   body { font-size: 11pt; line-height: 1.7; }
   a { color: var(--text); text-decoration: none; }
-}
-@media (max-width: 900px) {
-  .toc { transform: translateX(-100%); }
-  .toc.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,.15); }
-  .toc-toggle { display: block; }
-  .main { margin-left: 0; }
+  .chapter img { max-width: 90%; }
 }
 """
 
@@ -180,7 +212,8 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 <style>{css}</style>
 </head>
 <body>
-<button class="toc-toggle" onclick="document.querySelector('.toc').classList.toggle('open')">&#9776;</button>
+<div class="toc-overlay" onclick="document.querySelector('.toc').classList.remove('open');this.classList.remove('open')"></div>
+<button class="toc-toggle" onclick="document.querySelector('.toc').classList.toggle('open');document.querySelector('.toc-overlay').classList.toggle('open')">&#9776;</button>
 <div class="layout">
 <nav class="toc">
 <h2>{html_escape(title)}</h2>
@@ -188,7 +221,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 
     for sec in sections:
         html_parts.append(f'<a href="#sec_{sec["idx"]:03d}">{html_escape(sec["title"])}</a>')
-    html_parts.append('</nav><div class="main">')
+    html_parts.append('</nav><div class="main"><div class="main-inner">')
 
     html_parts.append('<div class="novel-header">')
     if cover_url:
@@ -196,7 +229,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
     html_parts.append(f'<h1>{html_escape(title)}</h1>')
     if author:
         html_parts.append(f'<p class="author">{html_escape(author)}</p>')
-    html_parts.append(f'<p class="meta">Generated by <a href="{_REPO_URL}">SFACG Spider</a></p>')
+    html_parts.append(f'<p class="meta"><a href="{_REPO_URL}"><img class="org-logo" src="https://github.com/light-nook-labs.png" alt="">SFACG Spider</a></p>')
     html_parts.append('</div>')
 
     if content_type == 'comic' and not local_images:
@@ -236,7 +269,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
             html_parts.append('</div>')
         html_parts.append('</div>')
 
-    html_parts.append('</div></div></body></html>')
+    html_parts.append('</div></div></div></body></html>')
 
     html_file = dir_path / f'{_sanitize_filename(title)}.html'
     html_file.write_text('\n'.join(html_parts), encoding='utf-8')
