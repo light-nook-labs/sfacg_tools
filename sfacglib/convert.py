@@ -213,7 +213,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
   .print-toc { display: block; page-break-after: always; }
   .print-toc h2 { font-size: 18pt; margin-bottom: 16pt; border-bottom: 2pt solid #333; padding-bottom: 6pt; }
   .print-toc .ptoc-vol { font-size: 12pt; margin-bottom: 6pt; }
-  .novel-header .cover { max-width: 60%; margin: 0 auto; }
+  .novel-header .cover { max-width: 80%; margin: 0 auto; }
   .volume > h2 { page-break-before: always; }
   .chapter { page-break-inside: avoid; }
   body { font-size: 11pt; line-height: 1.7; }
