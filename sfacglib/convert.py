@@ -260,31 +260,6 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
     return epub_path
 
 
-def _sanitize_for_pdf(text: str) -> str:
-    result = []
-    for ch in text:
-        cp = ord(ch)
-        if cp < 0x20 and ch not in '\n\t':
-            continue
-        if 0xD800 <= cp <= 0xDFFF:
-            continue
-        if cp > 0xFFFF:
-            result.append('?')
-            continue
-        result.append(ch)
-    return ''.join(result)
-
-
-def _register_pdf_fonts():
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-    for font in ('STSong-Light', 'HeiseiMin-W3', 'HeiseiKakuGo-W5'):
-        try:
-            pdfmetrics.registerFont(UnicodeCIDFont(font))
-        except Exception:
-            pass
-
-
 def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | None = None):
     try:
         from reportlab.lib.pagesizes import A4
@@ -292,10 +267,7 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
         from reportlab.lib.utils import ImageReader
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Image as RLImage
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import cm
-        _register_pdf_fonts()
+        pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
     except ImportError:
         logger.error('需要安装 reportlab: uv add reportlab')
         return None
@@ -307,145 +279,40 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
     title = catalog.get('title', dir_path.name)
     all_items = catalog.get('items', [])
     content_type = _detect_content_type(dir_path, all_items)
-    fetcher = fetcher or Fetcher()
+
+    if content_type != 'comic':
+        logger.warning('PDF 仅支持漫画，小说请使用 txt/epub/html')
+        return None
 
     pdf_path = dir_path / f'{_sanitize_filename(title)}.pdf'
+    c = canvas.Canvas(str(pdf_path), pagesize=A4)
     width, height = A4
 
-    if content_type == 'comic':
-        c = canvas.Canvas(str(pdf_path), pagesize=A4)
-        for sec in sections:
-            ch_items = items_by_sec.get(sec['idx'], [])
-            if not ch_items:
-                continue
-            c.setFont('STSong-Light', 16)
-            c.drawCentredString(width / 2, height - 50, sec['title'])
-            c.showPage()
-            for item in ch_items:
-                img_path = dir_path / item.get('file', '')
-                if img_path.exists():
-                    try:
-                        img = ImageReader(str(img_path))
-                        img_width, img_height = img.getSize()
-                        usable_width = width - 2 * padding
-                        usable_height = height - 2 * padding
-                        scale = min(usable_width / img_width, usable_height / img_height)
-                        draw_width = img_width * scale
-                        draw_height = img_height * scale
-                        x = (width - draw_width) / 2
-                        y = (height - draw_height) / 2
-                        c.drawImage(img, x, y, draw_width, draw_height)
-                        c.showPage()
-                    except Exception as e:
-                        logger.warning(f'图片处理失败: {e}')
-        c.setFont('STSong-Light', 10)
-        c.save()
-    else:
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle(
-            name='CNBody', fontName='STSong-Light', fontSize=11,
-            leading=20, firstLineIndent=22, spaceAfter=6,
-        ))
-        styles.add(ParagraphStyle(
-            name='CNTitle', fontName='STSong-Light', fontSize=20,
-            leading=28, alignment=1, spaceAfter=20,
-        ))
-        styles.add(ParagraphStyle(
-            name='CNVolume', fontName='STSong-Light', fontSize=16,
-            leading=24, spaceBefore=30, spaceAfter=12,
-        ))
-        styles.add(ParagraphStyle(
-            name='CNChapter', fontName='STSong-Light', fontSize=13,
-            leading=20, spaceBefore=20, spaceAfter=10,
-        ))
-
-        doc = SimpleDocTemplate(
-            str(pdf_path), pagesize=A4,
-            leftMargin=2.5*cm, rightMargin=2.5*cm,
-            topMargin=2.5*cm, bottomMargin=2.5*cm,
-        )
-
-        story = []
-
-        cover_url = catalog.get('cover', '')
-        if cover_url:
-            try:
-                from io import BytesIO
-                cover_data = fetcher.get_binary(cover_url)
-                cover_img = RLImage(BytesIO(cover_data))
-                max_w = width - 2*cm
-                max_h = height - 2*cm
-                scale = min(max_w / cover_img.drawWidth, max_h / cover_img.drawHeight, 1)
-                cover_img.drawWidth *= scale
-                cover_img.drawHeight *= scale
-                story.append(Spacer(1, (height - cover_img.drawHeight) / 2 - 2*cm))
-                story.append(cover_img)
-                story.append(PageBreak())
-            except Exception as e:
-                logger.warning(f'封面下载失败: {e}')
-
-        story.append(Paragraph(html_escape(title), styles['CNTitle']))
-        story.append(Spacer(1, 20))
-
-        for sec in sections:
-            story.append(PageBreak())
-            story.append(Paragraph(html_escape(sec['title']), styles['CNVolume']))
-            story.append(Spacer(1, 10))
-
-            for item in items_by_sec.get(sec['idx'], []):
-                ch_title = item.get('item_title', '')
-                if ch_title:
-                    story.append(Paragraph(html_escape(ch_title), styles['CNChapter']))
-
-                if content_type == 'comic':
-                    img_path = dir_path / item.get('file', '')
-                    if img_path.exists():
-                        try:
-                            max_w = width - 5*cm
-                            max_h = height - 5*cm
-                            img = RLImage(str(img_path))
-                            img_w, img_h = img.drawWidth, img.drawHeight
-                            scale = min(max_w / img_w, max_h / img_h, 1)
-                            img.drawWidth = img_w * scale
-                            img.drawHeight = img_h * scale
-                            story.append(img)
-                            story.append(Spacer(1, 10))
-                        except Exception as e:
-                            logger.warning(f'图片处理失败: {e}')
-                else:
-                    text = _read_item_text(dir_path, item)
-                    if text:
-                        for para in text.split('\n'):
-                            para = para.strip()
-                            if not para:
-                                story.append(Spacer(1, 6))
-                                continue
-                            img_match = re.match(r'!\[([^\]]*)\]\(([^)]+)\)', para)
-                            if img_match:
-                                img_url = img_match.group(2)
-                                if img_url.startswith('http'):
-                                    logger.debug(f'跳过远程图片: {img_url}')
-                                    continue
-                                try:
-                                    img = RLImage(str(dir_path / img_url))
-                                    max_w = width - 5*cm
-                                    max_h = height - 8*cm
-                                    if img.drawWidth > 0 and img.drawHeight > 0:
-                                        scale = min(max_w / img.drawWidth, max_h / img.drawHeight, 1)
-                                        img.drawWidth *= scale
-                                        img.drawHeight *= scale
-                                        story.append(img)
-                                        story.append(Spacer(1, 6))
-                                except Exception as e:
-                                    logger.debug(f'图片跳过: {img_url} ({e})')
-                                continue
-                            safe = _sanitize_for_pdf(para)
-                            safe = html_escape(safe)
-                            if safe.strip():
-                                story.append(Paragraph(safe, styles['CNBody']))
-
-        doc.build(story)
-
+    for sec in sections:
+        ch_items = items_by_sec.get(sec['idx'], [])
+        if not ch_items:
+            continue
+        c.setFont('STSong-Light', 16)
+        c.drawCentredString(width / 2, height - 50, sec['title'])
+        c.showPage()
+        for item in ch_items:
+            img_path = dir_path / item.get('file', '')
+            if img_path.exists():
+                try:
+                    img = ImageReader(str(img_path))
+                    img_width, img_height = img.getSize()
+                    usable_width = width - 2 * padding
+                    usable_height = height - 2 * padding
+                    scale = min(usable_width / img_width, usable_height / img_height)
+                    draw_width = img_width * scale
+                    draw_height = img_height * scale
+                    x = (width - draw_width) / 2
+                    y = (height - draw_height) / 2
+                    c.drawImage(img, x, y, draw_width, draw_height)
+                    c.showPage()
+                except Exception as e:
+                    logger.warning(f'图片处理失败: {e}')
+    c.save()
     logger.bind(force=True).info(f'PDF: {pdf_path}')
     return pdf_path
 
