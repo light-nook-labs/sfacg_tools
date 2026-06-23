@@ -12,14 +12,13 @@ Multi-content-type web scraper for [SF Light Novel (sfacg.com)](https://book.sfa
 sfacglib/
   __init__.py     # Package exports
   models.py       # Pydantic data models (SearchItem, Catalog, CatalogSection, CatalogItem)
-  base.py         # Abstract base classes: Container, Section, Item + _filter_items
-  config.py       # Centralized constants + Pydantic Settings
+  base.py         # Abstract base classes: Container, Section, Item, Ch + _filter_items
+  config.py       # Centralized constants + Pydantic Settings + VipMode enum
   fetcher.py      # Smart HTTP fetcher (rotating UA, retry, rate limiting, auth)
   auth.py         # Login, session persistence, cookie management (GetLoginInfo API)
   selectors.py    # CSS selector registry (loads from selectors.json)
   selectors.json  # All CSS selectors, organized by page type
-  ch.py           # Chapter content fetcher + VIP processing (OCR/LLM/RAW/DEEPSEEK_WEB)
-  novel.py        # Novel downloader (NovelVolume, NovelChapter, ReviewComment)
+  novel.py        # Novel downloader + Chapter classes + VIP processing
   comic.py        # Comic downloader (ComicChapter, ComicPage)
   audio.py        # Audiobook downloader (AudioVolume, AudioChapter)
   epub.py         # EPUB generation with three-level TOC
@@ -31,7 +30,7 @@ sfacglib/
   chatbot.py      # Agent with tool calling (OCR, pinyin removal, batch ops)
   nlp.py          # NLP post-processing (merge wrapped lines)
   progress.py     # Progress tracking with SQLite (finalize_task for completion)
-  utils.py        # Shared utilities (sanitize_filename, fix_url_protocol)
+  utils.py        # Shared utilities (sanitize_filename, fix_url_protocol, validate_gif)
   audiobooks.json # Cached audiobook catalog
   ui/
     __init__.py   # UI entry point

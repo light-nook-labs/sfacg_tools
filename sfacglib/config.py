@@ -1,4 +1,5 @@
 from pathlib import Path
+from enum import Enum
 from pydantic_settings import BaseSettings
 
 PACKAGE_DIR = Path(__file__).parent
@@ -86,6 +87,14 @@ WORKERS_AUDIO_VOLUME: int = 5
 WORKERS_EPUB_IMG: int = 10
 
 
+class VipMode(Enum):
+    """VIP chapter processing modes."""
+    OCR = 'ocr'
+    RAW = 'raw'
+    LLM = 'llm'
+    DEEPSEEK_WEB = 'deepseek_web'
+
+
 class Settings(BaseSettings):
     cookie: str = ''
     chatbot_base_url: str = ''
@@ -123,5 +132,6 @@ __all__ = [
     'CHATBOT_MAX_FILE_SIZE', 'CHATBOT_MAX_PAGES',
     'SEARCH_SNIPPET_LENGTH', 'REVIEW_PAGE_SIZE',
     'CORRECT_OCR_SYSTEM_PROMPT',
+    'VipMode',
     'Settings', 'settings',
 ]

@@ -21,21 +21,19 @@ from .config import (
     WORKERS_CHAPTER, WORKERS_IMAGE, WORKERS_AUDIO_CHAPTER,
     WORKERS_AUDIO_VOLUME, WORKERS_EPUB_IMG,
     VIP_IMAGE_WIDTH, OCR_STRIP_HEIGHT, OCR_WORKERS, OCR_BRIGHTNESS_THRESHOLD,
-    Settings, settings,
+    VipMode, Settings, settings,
 )
 from .models import SearchItem, CatalogItem, CatalogSection, Catalog
 from .fetcher import Fetcher
 from .auth import Auth
 from .selectors import Selectors, SelectorError
-from .ch import Chapter, MobileChapter, PCChapter, VIPChapter
-from .base import Container, Section, Item
-from .novel import Novel
+from .base import Container, Section, Item, Ch
+from .novel import Novel, Chapter, MobileChapter, PCChapter, VIPChapter, process_vip_chapter
 from .comic import Comic, ComicChapter
 from .audio import Audio, AudioChapter, AudioVolume
 from .epub import download_epub, convert_html_to_epub, convert_md_to_epub
 from .progress import ProgressTracker
-from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks
-from .ch import VipMode, process_vip_chapter
+from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks, validate_gif
 from .ocr_fast import (
     ocr_image, ocr_bytes, ocr_gif,
     prepare_lines_as_images, image_to_bytes,
@@ -51,13 +49,13 @@ __all__ = [
     'Fetcher', 'Auth',
     'Selectors', 'SelectorError',
     'Chapter', 'MobileChapter', 'PCChapter', 'VIPChapter',
-    'Container', 'Section', 'Item',
+    'Container', 'Section', 'Item', 'Ch',
     'Novel',
     'Comic', 'ComicChapter',
     'Audio', 'AudioChapter', 'AudioVolume',
     'download_epub', 'convert_html_to_epub', 'convert_md_to_epub',
     'ProgressTracker',
-    'sanitize_filename', 'mobile_url', 'parse_volume_ul', 'run_tasks',
+    'sanitize_filename', 'mobile_url', 'parse_volume_ul', 'run_tasks', 'validate_gif',
     'VipMode', 'process_vip_chapter',
     'ocr_image', 'ocr_bytes', 'ocr_gif',
     'prepare_lines_as_images', 'image_to_bytes',

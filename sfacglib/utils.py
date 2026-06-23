@@ -1,9 +1,11 @@
 import re
 from typing import Callable, TypeVar
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
 from tqdm import tqdm
 from bs4 import Tag
 from loguru import logger
+from PIL import Image
 from .config import MOBILE_BASE
 
 T = TypeVar('T')
@@ -69,3 +71,16 @@ def run_tasks(
                 logger.error(f'{desc} failed: {key} - {e}')
                 results_map[key] = None
     return [(k, results_map[k]) for k in tasks if k in results_map]
+
+
+def validate_gif(gif_bytes: bytes, expected_width: int = 0) -> tuple[bool, str]:
+    try:
+        with Image.open(BytesIO(gif_bytes)) as img:
+            if img.format != 'GIF':
+                return False, f'not GIF (format={img.format}, size={img.size})'
+            w, h = img.size
+            if expected_width and w != expected_width:
+                return False, f'width mismatch ({w} != expected {expected_width})'
+            return True, f'{w}x{h}'
+    except Exception as e:
+        return False, f'invalid: {e}'

@@ -3,9 +3,11 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+from bs4 import BeautifulSoup, NavigableString, Tag
 from loguru import logger
 from .fetcher import Fetcher
 from .config import WORKERS_CHAPTER
+from .selectors import Selectors
 from .progress import ProgressTracker, _extract_id
 from .utils import sanitize_filename as _sanitize_filename
 from .models import Catalog, CatalogSection, CatalogItem
@@ -338,3 +340,51 @@ class Container(ABC):
             parts.append('</body></html>')
 
         return '\n\n'.join(parts) if ext != 'html' else '\n'.join(parts)
+
+
+class Ch(ABC):
+
+    def __init__(self, url: str = '', fetcher: Fetcher | None = None, selectors: Selectors | None = None):
+        self.url = url
+        self.title: str = ''
+        self.fetcher = fetcher or Fetcher()
+        self.sel = selectors or Selectors()
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__}>'
+
+    def _download(self, parent_dir: str | Path = './', file_type: str = 'md'):
+        content = self.get_chapter_content()
+        path = Path(parent_dir) / f'{self.title}.{file_type}'
+        text = content[0] if file_type in ('md', 'txt') else content[1]
+        path.write_text(text, encoding='utf-8')
+        logger.bind(force=True).info(f'下载完成 {self.title}')
+
+    def _soup(self) -> BeautifulSoup:
+        html = self.fetcher.get_html(self.url)
+        return BeautifulSoup(html, 'html.parser')
+
+    def download(self, parent_dir: str | Path = './', file_type: str = 'md', force: bool = True) -> None:
+        if force:
+            self._download(parent_dir, file_type)
+
+    def _parse_children(self, container: Tag) -> str:
+        md = ''
+        for child in container.children:
+            if isinstance(child, NavigableString):
+                text = str(child).strip()
+                if text:
+                    md += f'{text}\n\n'
+            elif isinstance(child, Tag):
+                if child.name == 'img':
+                    src = child.get('src', '')
+                    md += f'![]({src})\n\n'
+                elif child.name == 'p':
+                    md += f'{child.get_text().strip()}\n\n'
+                elif child.name == 'br':
+                    continue
+        return md
+
+    @abstractmethod
+    def get_chapter_content(self) -> tuple[str, str]:
+        pass
