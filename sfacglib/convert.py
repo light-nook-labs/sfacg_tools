@@ -96,45 +96,122 @@ def convert_to_html(dir_path: str | Path, local_images: bool = True):
     sections = _get_sections(catalog)
     items_by_sec = _get_items_by_section(catalog)
     title = catalog.get('title', dir_path.name)
+    author = catalog.get('author', '')
     all_items = catalog.get('items', [])
     content_type = _detect_content_type(dir_path, all_items)
+    cover_url = catalog.get('cover', '')
+
+    css = """
+:root {
+  --bg: #fafaf9; --surface: #ffffff; --text: #1c1917; --text2: #57534e;
+  --border: #e7e5e4; --accent: #b45309; --accent2: #d97706;
+  --toc-w: 280px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+       background: var(--bg); color: var(--text); line-height: 1.9; }
+
+.layout { display: flex; min-height: 100vh; }
+
+/* TOC sidebar */
+.toc { position: fixed; top: 0; left: 0; width: var(--toc-w); height: 100vh;
+       overflow-y: auto; background: var(--surface); border-right: 1px solid var(--border);
+       padding: 20px 16px; z-index: 100; transition: transform .3s; }
+.toc-toggle { display: none; position: fixed; top: 12px; left: 12px; z-index: 200;
+              background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+              padding: 6px 10px; cursor: pointer; font-size: 18px; }
+.toc h2 { font-size: 14px; color: var(--text2); text-transform: uppercase; letter-spacing: .1em;
+          margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.toc a { display: block; padding: 5px 8px; color: var(--text2); text-decoration: none;
+         font-size: 13px; border-radius: 4px; white-space: nowrap; overflow: hidden;
+         text-overflow: ellipsis; }
+.toc a:hover { background: #f5f5f4; color: var(--text); }
+.toc a.active { background: #fef3c7; color: var(--accent); font-weight: 600; }
+
+/* Main content */
+.main { margin-left: var(--toc-w); max-width: 800px; padding: 40px 32px; }
+
+/* Header */
+.novel-header { text-align: center; margin-bottom: 48px; padding-bottom: 32px;
+                border-bottom: 1px solid var(--border); }
+.novel-header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+.novel-header .author { font-size: 15px; color: var(--text2); }
+.novel-header .meta { font-size: 12px; color: #a8a29e; margin-top: 8px; }
+.novel-header .cover { max-width: 200px; margin: 16px auto; border-radius: 8px;
+                       box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+
+/* Volume & Chapter */
+.volume { margin-top: 48px; }
+.volume > h2 { font-size: 20px; font-weight: 700; color: var(--accent);
+               padding-bottom: 10px; border-bottom: 2px solid var(--accent2); margin-bottom: 20px; }
+.chapter { margin-bottom: 32px; }
+.chapter > h3 { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+.chapter p { text-indent: 2em; margin: 0.4em 0; }
+.chapter img { max-width: 100%; height: auto; display: block; margin: 12px auto;
+               border-radius: 4px; }
+
+.generated { text-align: center; font-size: 12px; color: #a8a29e; margin-top: 20px; }
+.generated a { color: #a8a29e; }
+
+/* Print */
+@media print {
+  .toc, .toc-toggle { display: none !important; }
+  .main { margin-left: 0; max-width: 100%; padding: 0; }
+  .novel-header { page-break-after: always; }
+  .volume > h2 { page-break-before: always; }
+  .chapter { page-break-inside: avoid; }
+  body { font-size: 11pt; line-height: 1.7; }
+  a { color: var(--text); text-decoration: none; }
+}
+@media (max-width: 900px) {
+  .toc { transform: translateX(-100%); }
+  .toc.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,.15); }
+  .toc-toggle { display: block; }
+  .main { margin-left: 0; }
+}
+"""
 
     html_parts = [f"""<!DOCTYPE html>
-<html>
+<html lang="zh">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html_escape(title)}</title>
-<style>
-body {{ font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; line-height: 1.8; }}
-h1 {{ text-align: center; color: #333; }}
-h2 {{ color: #666; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-top: 40px; }}
-h3 {{ color: #444; margin-top: 30px; }}
-.chapter {{ margin-bottom: 40px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
-p {{ text-indent: 2em; margin: 0.5em 0; }}
-.toc {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
-.toc a {{ display: block; padding: 8px; color: #0066cc; text-decoration: none; }}
-.toc a:hover {{ background: #f0f0f0; }}
-.warning {{ background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 8px; margin-bottom: 20px; }}
-</style>
+<style>{css}</style>
 </head>
 <body>
-<h1>{html_escape(title)}</h1>
-<p style="text-align:center; color:#999; font-size:12px;">Generated by <a href="{_REPO_URL}" style="color:#999;">SFACG Spider</a></p>
+<button class="toc-toggle" onclick="document.querySelector('.toc').classList.toggle('open')">&#9776;</button>
+<div class="layout">
+<nav class="toc">
+<h2>{html_escape(title)}</h2>
 """]
+
+    for sec in sections:
+        html_parts.append(f'<a href="#sec_{sec["idx"]:03d}">{html_escape(sec["title"])}</a>')
+    html_parts.append('</nav><div class="main">')
+
+    html_parts.append('<div class="novel-header">')
+    if cover_url:
+        html_parts.append(f'<img class="cover" src="{html_escape(cover_url)}" alt="{html_escape(title)}">')
+    html_parts.append(f'<h1>{html_escape(title)}</h1>')
+    if author:
+        html_parts.append(f'<p class="author">{html_escape(author)}</p>')
+    html_parts.append(f'<p class="meta">Generated by <a href="{_REPO_URL}">SFACG Spider</a></p>')
+    html_parts.append('</div>')
 
     if content_type == 'comic' and not local_images:
         html_parts.append('<div class="warning">本文件使用远程图片URL，链接随时可能失效。</div>')
 
-    html_parts.append('<div class="toc"><h2>目录</h2>')
     for sec in sections:
-        html_parts.append(f'<a href="#sec_{sec["idx"]:03d}">{html_escape(sec["title"])}</a>')
-    html_parts.append('</div>')
-
-    for sec in sections:
-        html_parts.append(f'<div class="chapter" id="sec_{sec["idx"]:03d}">')
+        html_parts.append(f'<div class="volume" id="sec_{sec["idx"]:03d}">')
         html_parts.append(f'<h2>{html_escape(sec["title"])}</h2>')
         for item in items_by_sec.get(sec['idx'], []):
+            ch_title = item.get('item_title', '')
+            if ch_title:
+                html_parts.append(f'<div class="chapter"><h3>{html_escape(ch_title)}</h3>')
+            else:
+                html_parts.append('<div class="chapter">')
+
             if content_type == 'comic':
                 if local_images:
                     src = item.get('file', '')
@@ -144,16 +221,22 @@ p {{ text-indent: 2em; margin: 0.5em 0; }}
             else:
                 text = _read_item_text(dir_path, item)
                 if text:
-                    ch_title = item.get('item_title', '')
-                    if ch_title:
-                        html_parts.append(f'<h3>{html_escape(ch_title)}</h3>')
                     for para in text.split('\n'):
                         para = para.strip()
-                        if para:
+                        if not para:
+                            continue
+                        img_match = re.match(r'!\[([^\]]*)\]\(([^)]+)\)', para)
+                        if img_match:
+                            alt, src = img_match.group(1), img_match.group(2)
+                            if src.startswith('//'):
+                                src = 'https:' + src
+                            html_parts.append(f'<img src="{html_escape(src)}" alt="{html_escape(alt)}" loading="lazy">')
+                        else:
                             html_parts.append(f'<p>{html_escape(para)}</p>')
+            html_parts.append('</div>')
         html_parts.append('</div>')
 
-    html_parts.append('</body></html>')
+    html_parts.append('</div></div></body></html>')
 
     html_file = dir_path / f'{_sanitize_filename(title)}.html'
     html_file.write_text('\n'.join(html_parts), encoding='utf-8')
