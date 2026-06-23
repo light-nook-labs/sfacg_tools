@@ -317,7 +317,17 @@ class Container(ABC):
             parts.append((dir_path / 'info.md').read_text(encoding='utf-8'))
 
         items_key = 'items' if 'items' in catalog else 'chapters'
+        last_section_idx = None
         for item in catalog[items_key]:
+            sec_idx = item.get('section_idx', 0)
+            if sec_idx != last_section_idx:
+                sec_title = item.get('section_title', '')
+                if sec_title:
+                    if ext == 'html':
+                        parts.append(f'<h2>{sec_title}</h2>')
+                    else:
+                        parts.append(f'## {sec_title}')
+                last_section_idx = sec_idx
             item_path = dir_path / item['file']
             if item_path.exists():
                 parts.append(item_path.read_text(encoding='utf-8'))
