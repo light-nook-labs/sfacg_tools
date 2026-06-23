@@ -230,7 +230,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 <button class="toc-toggle" onclick="document.querySelector('.toc').classList.toggle('open');document.querySelector('.toc-overlay').classList.toggle('open')">&#9776;</button>
 <div class="layout">
 <nav class="toc">
-<h2>{html_escape(title)}</h2>
+<h2><a href="#" style="color:inherit;text-decoration:none">{html_escape(title)}</a></h2>
 """]
 
     for sec in sections:
