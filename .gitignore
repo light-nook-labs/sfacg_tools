@@ -219,3 +219,4 @@ sfacglib/progress.db
 *.gif
 *.png
 output/
+output*/
