@@ -162,17 +162,17 @@ class ReviewComment(Item):
         msg += f'{content}\n\n{replies}\n\n'
 
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(save_path, 'a', encoding='utf-8') as f:
+        with open(save_path, 'w', encoding='utf-8') as f:
             f.write(msg)
 
         if pbar and lock:
             with lock:
                 pbar.update(1)
 
-    def _get_replies(self) -> str:
+    def _get_replies(self, max_pages: int = 100) -> str:
         page = 0
         replies: list[str] = []
-        while True:
+        while page < max_pages:
             params = {
                 'op': 'getcmtreply',
                 'cid': self.cid,
@@ -364,6 +364,8 @@ class Novel(Container):
                             chapters.append(NovelChapter(
                                 ch_idx, title, url, self.fetcher, self.sel,
                                 vip=is_vip,
+                                vip_mode=self.vip_mode, llm_api_key=self.llm_api_key,
+                                llm_base_url=self.llm_base_url, llm_model=self.llm_model,
                             ))
                 volumes.append(NovelVolume(vol_idx, vol_title, chapters))
         else:
@@ -394,10 +396,10 @@ class Novel(Container):
             comments.append(ReviewComment(idx, cid, self.title, self.fetcher))
         return ReviewSection(1, '长评', comments)
 
-    def _get_review_ids(self) -> list[str]:
+    def _get_review_ids(self, max_pages: int = 100) -> list[str]:
         page = 0
         review_ids: list[str] = []
-        while True:
+        while page < max_pages:
             params = {
                 'op': 'getcmtlist',
                 'nid': self.nid,
@@ -483,10 +485,8 @@ class Novel(Container):
                 filename = f'ch_{item.idx:03d}_{safe_title}.{ext_check}' if safe_title else f'ch_{item.idx:03d}.{ext_check}'
                 stem = Path(filename).stem
                 if stem in existing_stems:
-                    tracker.mark_done(task_id, item.url) if tracker else None
-
-        dir_path = path / _sanitize_filename(self.title)
-        dir_path.mkdir(parents=True, exist_ok=True)
+                    if tracker:
+                        tracker.mark_done(task_id, item.url)
 
         lock = threading.Lock()
         pbar = tqdm(total=len(all_items), desc=self.title, unit='task')

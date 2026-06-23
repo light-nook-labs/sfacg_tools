@@ -47,9 +47,12 @@ class Selectors:
         try:
             with open(self._path, 'r', encoding='utf-8') as f:
                 self._data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f'Failed to load selectors from {self._path}: {e}')
+        except FileNotFoundError:
+            logger.error(f'Selectors file not found: {self._path}')
             self._data = {}
+        except json.JSONDecodeError as e:
+            logger.error(f'Selectors JSON parse error: {self._path}: {e}')
+            raise
 
     def get_selector(self, page: str, field: str) -> dict:
         """Get raw selector config for a page.field combination."""
@@ -111,7 +114,7 @@ class Selectors:
     ) -> str | None:
         """Find an element and extract its attribute value."""
         config = self.get_selector(page, field)
-        attr_name = config.get('attr', 'src')
+        attr_name = config.get('attr', 'href')
         element = self.find(soup, page, field, url=url, required=required)
         if element is None:
             return None

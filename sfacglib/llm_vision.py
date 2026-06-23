@@ -157,20 +157,27 @@ class LLMVision:
         
         try:
             logger.debug(f'LLMVision.ocr_image: 调用 {self.provider.value} Vision API')
-            resp = requests.post(
-                f'{self.base_url}/chat/completions',
-                headers=self._get_headers(),
-                json=payload,
-                timeout=120,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            result = data['choices'][0]['message']['content'].strip()
-            
-            elapsed = time.perf_counter() - start_time
-            logger.debug(f'LLMVision.ocr_image: 完成，耗时 {elapsed:.3f}s，结果长度 {len(result)}')
-            return result
-            
+            for attempt in range(3):
+                try:
+                    resp = requests.post(
+                        f'{self.base_url}/chat/completions',
+                        headers=self._get_headers(),
+                        json=payload,
+                        timeout=120,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    result = data['choices'][0]['message']['content'].strip()
+
+                    elapsed = time.perf_counter() - start_time
+                    logger.debug(f'LLMVision.ocr_image: 完成，耗时 {elapsed:.3f}s，结果长度 {len(result)}')
+                    return result
+                except (requests.ConnectionError, requests.Timeout) as e:
+                    if attempt < 2:
+                        logger.warning(f'LLMVision.ocr_image: 重试 {attempt+1}/3: {e}')
+                        time.sleep(2 ** attempt)
+                    else:
+                        raise
         except Exception as e:
             elapsed = time.perf_counter() - start_time
             logger.error(f'LLMVision.ocr_image: 失败 {e}，耗时 {elapsed:.3f}s')

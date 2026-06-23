@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from loguru import logger
 from .fetcher import Fetcher
+from .config import WORKERS_CHAPTER
 from .progress import ProgressTracker, _extract_id
 from .utils import sanitize_filename as _sanitize_filename
 
@@ -102,7 +103,7 @@ class Container(ABC):
                     s, e = part.split('-', 1)
                     try:
                         s_int, e_int = int(s), int(e)
-                        if s_int < 10000 or s_int < 0:
+                        if all(0 < x <= len(all_items) for x in (s_int, e_int)):
                             is_index = True
                         for i in range(s_int, e_int + 1):
                             ids.add(str(i))
@@ -112,7 +113,7 @@ class Container(ABC):
                     try:
                         val = int(part)
                         ids.add(str(val))
-                        if val < 10000 or val < 0:
+                        if 0 < val <= len(all_items):
                             is_index = True
                     except ValueError:
                         ids.add(part)
@@ -156,15 +157,18 @@ class Container(ABC):
         task_id: str | None = None,
     ) -> list[dict]:
         has_tracker = tracker and task_id
-        pending_cids = set(ch['cid'] for ch in (tracker.get_pending(task_id) if has_tracker else []))
+        pending_cids = None
+        if has_tracker:
+            pending = tracker.get_pending(task_id)
+            pending_cids = set(ch['cid'] for ch in pending)
 
         catalog_items = []
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
             futures = {}
             for section, item in items:
                 item_cid = _extract_id(item.url)
-                if has_tracker and item_cid not in pending_cids:
+                if has_tracker and pending_cids is not None and item_cid not in pending_cids:
                     continue
                 safe_section = _sanitize_filename(section.title)
                 section_dir = dir_path / f'{section_prefix}_{section.idx:03d}_{safe_section}'
@@ -211,6 +215,8 @@ class Container(ABC):
                             pbar.update(1)
 
             if anti_scraping:
+                if catalog_items:
+                    logger.warning(f'反爬检测，已下载 {len(catalog_items)} 项，保存部分结果')
                 raise anti_scraping
 
         return sorted(catalog_items, key=lambda x: (x['section_idx'], x['item_idx']))
@@ -262,7 +268,10 @@ class Container(ABC):
             'items': [],
         }
 
-        catalog['items'] = self._download_items(all_items, dir_path, ext, pbar, lock, tracker, task_id)
+        catalog['items'] = self._download_items(
+            all_items, dir_path, ext,
+            pbar=pbar, lock=lock, tracker=tracker, task_id=task_id,
+        )
 
         for section in sections:
             catalog['sections'].append({

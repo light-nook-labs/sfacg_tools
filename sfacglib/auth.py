@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from loguru import logger
 import requests
@@ -51,10 +52,12 @@ class Auth:
         self.username = username
         self.is_logged_in = True
 
+        COOKIE_PATH.parent.mkdir(parents=True, exist_ok=True)
         COOKIE_PATH.write_text(
             json.dumps({'cookies': cookies, 'username': username}, ensure_ascii=False, indent=2),
             encoding='utf-8',
         )
+        os.chmod(COOKIE_PATH, 0o600)
         logger.info(f'Cookies saved to {COOKIE_PATH}')
 
     def import_cookies(self, cookie_string: str) -> bool:
@@ -84,7 +87,9 @@ class Auth:
         if not self._cookies:
             return False
 
-        original_cookies = dict(session.cookies)
+        original_cookies = requests.cookies.RequestsCookieJar()
+        for cookie in session.cookies:
+            original_cookies.set_cookie(cookie)
         for name, value in self._cookies.items():
             session.cookies.set(name, value, domain='.sfacg.com')
 
@@ -95,19 +100,17 @@ class Auth:
                 timeout=10,
             )
             resp.raise_for_status()
-            if '退出' in resp.text or 'logout' in resp.text.lower() or '我的' in resp.text:
+            if resp.raise_for_status() is None and ('退出' in resp.text or 'logout' in resp.text.lower() or '我的' in resp.text):
                 logger.info('Session cookies are valid')
                 return True
             logger.info('Session cookies expired')
             session.cookies.clear()
-            for name, value in original_cookies.items():
-                session.cookies.set(name, value)
+            session.cookies.update(original_cookies)
             return False
         except Exception as e:
             logger.warning(f'Cookie validation failed: {e}')
             session.cookies.clear()
-            for name, value in original_cookies.items():
-                session.cookies.set(name, value)
+            session.cookies.update(original_cookies)
             return False
 
     def apply(self, session: requests.Session):

@@ -223,12 +223,14 @@ class ChatBot:
 
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         self.max_turns = max_turns
+        self.max_messages = 60
         self.system_prompt = system_prompt or AGENT_SYSTEM_PROMPT
         self.messages: list[dict] = []
         self.messages.append({'role': 'system', 'content': self.system_prompt})
 
     def chat(self, user_input: str) -> str:
         self.messages.append({'role': 'user', 'content': user_input})
+        self._trim_messages()
 
         for turn in range(self.max_turns):
             resp = self.client.chat.completions.create(
@@ -287,8 +289,18 @@ class ChatBot:
         except Exception as e:
             return f'Error: {e}'
 
+    def _validate_path(self, path: str) -> Path:
+        p = Path(path).resolve()
+        project_root = Path(__file__).parent.parent.resolve()
+        if not (p == project_root or project_root in p.parents):
+            raise ValueError(f'Path outside project directory: {path}')
+        return p
+
     def _tool_read_file(self, path: str) -> str:
-        p = Path(path)
+        try:
+            p = self._validate_path(path)
+        except ValueError as e:
+            return str(e)
         if not p.exists():
             return f'File not found: {path}'
         if p.stat().st_size > 500_000:
@@ -296,13 +308,19 @@ class ChatBot:
         return p.read_text(encoding='utf-8')
 
     def _tool_write_file(self, path: str, content: str) -> str:
-        p = Path(path)
+        try:
+            p = self._validate_path(path)
+        except ValueError as e:
+            return str(e)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding='utf-8')
         return f'Wrote {len(content)} chars to {path}'
 
     def _tool_list_dir(self, path: str, pattern: str = '*') -> str:
-        p = Path(path)
+        try:
+            p = self._validate_path(path)
+        except ValueError as e:
+            return str(e)
         if not p.exists():
             return f'Directory not found: {path}'
         entries = sorted(p.glob(pattern))
@@ -413,56 +431,22 @@ class ChatBot:
         for i, f in enumerate(files, 1):
             try:
                 logger.info(f'[{i}/{len(files)}] {f.name}')
-                result = self._tool_remove_pinyin(str(f))
-                results.append(result)
-            except Exception as e:
-                results.append(f'Failed: {f.name} - {e}')
-        return '\n'.join(results)
-
-    def _tool_batch_ocr(self, dir_path: str, pattern: str = '*.gif') -> str:
-        d = Path(dir_path)
-        if not d.exists():
-            return f'Directory not found: {dir_path}'
-        files = sorted(d.rglob(pattern))
-        if not files:
-            return f'No files matching {pattern} in {dir_path}'
-        results = []
-        for i, f in enumerate(files, 1):
-            try:
-                logger.info(f'[{i}/{len(files)}] {f.name}')
-                result = self._tool_ocr_gif(str(f))
-                results.append(result)
-            except Exception as e:
-                results.append(f'Failed: {f.name} - {e}')
-        return '\n'.join(results)
-
-    def _tool_batch_correct_ocr(self, dir_path: str, pattern: str = '*.txt', context: str = '') -> str:
-        d = Path(dir_path)
-        if not d.exists():
-            return f'Directory not found: {dir_path}'
-        files = sorted(d.rglob(pattern))
-        if not files:
-            return f'No files matching {pattern} in {dir_path}'
-        results = []
-        for i, f in enumerate(files, 1):
-            try:
-                logger.info(f'[{i}/{len(files)}] {f.name}')
                 result = self._tool_correct_ocr_file(str(f), context=context)
                 results.append(result)
             except Exception as e:
                 results.append(f'Failed: {f.name} - {e}')
         return '\n'.join(results)
 
-    def _tool_run_command(self, command: str) -> str:
-        result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, timeout=60
-        )
-        output = result.stdout + result.stderr
-        return output[:2000] if output else '(no output)'
-
     def reset(self):
         self.messages = []
         self.messages.append({'role': 'system', 'content': self.system_prompt})
+
+    def _trim_messages(self):
+        if len(self.messages) <= self.max_messages:
+            return
+        system = self.messages[0]
+        overflow = len(self.messages) - self.max_messages
+        self.messages = [system] + self.messages[1 + overflow:]
 
 
 def interactive_chat(base_url: str = '', api_key: str = '', model: str = ''):

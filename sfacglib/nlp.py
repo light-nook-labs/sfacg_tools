@@ -60,4 +60,12 @@ def _should_merge(prev: str, curr: str) -> bool:
 
 
 def _is_chinese(char: str) -> bool:
-    return '\u4e00' <= char <= '\u9fff'
+    cp = ord(char)
+    return (
+        0x4E00 <= cp <= 0x9FFF
+        or 0x3400 <= cp <= 0x4DBF
+        or 0x20000 <= cp <= 0x2A6DF
+        or 0x2A700 <= cp <= 0x2B73F
+        or 0xF900 <= cp <= 0xFAFF
+        or 0x2F800 <= cp <= 0x2FA1F
+    )

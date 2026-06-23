@@ -24,8 +24,7 @@ sfacglib/
   epub.py         # EPUB generation with three-level TOC
   convert.py      # Format conversion (HTML, EPUB, PDF)
   vip.py          # VIP chapter processing (image download, GIF→PNG, OCR pipeline)
-  ocr.py          # OCR engine (RapidOCR, image preprocessing, text extraction)
-  ocr_fast.py     # Optimized local OCR (smart pinyin removal, rec_only, parallel)
+  ocr_fast.py     # OCR engine (RapidOCR, smart pinyin removal, rec_only, parallel)
   llm_vision.py   # LLM Vision API for OCR
   web_llm_vision.py # Browser-based LLM Vision (DeepSeek)
   chatbot.py      # Agent with tool calling (OCR, pinyin removal, batch ops)
@@ -53,7 +52,7 @@ sfacglib/
 
 main.py           # Unified CLI entry point
 buildozer.spec    # Android APK build config
-.cookies.json     # Saved session cookies — gitignored
+.cookies.json     # Saved session cookies — gitignored (stored in ~/.config/sfacg/)
 .env              # Chatbot config (CHATBOT_BASE_URL, CHATBOT_API_KEY, CHATBOT_MODEL)
 ```
 
@@ -96,7 +95,8 @@ VIP chapters detected via `.icn_vip` badge. Downloaded as `.gif` files, OCR is a
 - Logging via `loguru` (not stdlib logging)
 - Rate limiting: always respect delays between requests (0.2s–3s depending on context)
 - Concurrency: `concurrent.futures.ThreadPoolExecutor` for parallel downloads
-- Progress: single `tqdm` bar with `threading.Lock` for thread-safe updates
+- Progress: `ProgressTracker` with SQLite (thread-safe with `threading.Lock`)
+- Cookie file: stored in `~/.config/sfacg/.cookies.json` with `0600` permissions
 - Directory mode: all formats default to directory mode (one file per chapter/page)
 - catalog.json: metadata + ordered chapter mapping for assembly
 - Single file/EPUB: assembled from directory structure

@@ -318,16 +318,127 @@ def ocr_bytes(image_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: i
     return ocr_gif(image_bytes, workers, cpu_num_threads)
 
 
-def ocr_gif_with_llm(gif_bytes: bytes, **kwargs) -> str:
-    from .ocr import ocr_gif_with_llm as _orig
-    return _orig(gif_bytes, **kwargs)
+def ocr_gif_with_llm(
+    gif_bytes: bytes,
+    provider: str = 'kimi',
+    api_key: str = '',
+    base_url: str = '',
+    vision_model: str = '',
+    text_model: str = '',
+    batch_size: int = 10,
+    use_web: bool = False,
+    headless: bool = False,
+) -> str:
+    lines = prepare_lines_as_images(gif_bytes)
+    if not lines:
+        return ''
+
+    if use_web:
+        from .web_llm_vision import create_web_llm_vision
+        llm_client = create_web_llm_vision(provider=provider, headless=headless)
+    else:
+        from .llm_vision import create_llm_vision
+        llm_client = create_llm_vision(
+            provider=provider, api_key=api_key, base_url=base_url,
+            vision_model=vision_model, text_model=text_model,
+        )
+
+    all_results: list[str] = []
+    for batch_idx in range(0, len(lines), batch_size):
+        batch = lines[batch_idx:batch_idx + batch_size]
+        try:
+            if use_web:
+                for img in batch:
+                    all_results.append(llm_client.ocr_image(img))
+            else:
+                all_results.extend(llm_client.ocr_images(batch))
+        except Exception as e:
+            logger.error(f'ocr_gif_with_llm: batch failed: {e}')
+            all_results.extend([''] * len(batch))
+
+    return '\n'.join(r for r in all_results if r)
 
 
-def ocr_image_with_llm(image_source: str | Path, **kwargs) -> str:
-    from .ocr import ocr_image_with_llm as _orig
-    return _orig(image_source, **kwargs)
+def ocr_image_with_llm(
+    image_source: str | Path,
+    provider: str = 'kimi',
+    api_key: str = '',
+    base_url: str = '',
+    vision_model: str = '',
+    text_model: str = '',
+    batch_size: int = 10,
+    use_web: bool = False,
+    headless: bool = False,
+) -> str:
+    if isinstance(image_source, Path) or not str(image_source).startswith('http'):
+        img_bytes = Path(image_source).read_bytes()
+    else:
+        from .fetcher import Fetcher
+        img_bytes = Fetcher().get_binary(str(image_source))
+
+    suffix = Path(str(image_source)).suffix.lower()
+    if suffix == '.gif':
+        return ocr_gif_with_llm(
+            img_bytes, provider=provider, api_key=api_key, base_url=base_url,
+            vision_model=vision_model, text_model=text_model,
+            batch_size=batch_size, use_web=use_web, headless=headless,
+        )
+
+    if use_web:
+        from .web_llm_vision import create_web_llm_vision
+        llm_client = create_web_llm_vision(provider=provider, headless=headless)
+    else:
+        from .llm_vision import create_llm_vision
+        llm_client = create_llm_vision(
+            provider=provider, api_key=api_key, base_url=base_url,
+            vision_model=vision_model, text_model=text_model,
+        )
+
+    return llm_client.ocr_image(img_bytes)
 
 
 def prepare_lines_as_images(gif_bytes: bytes) -> list[Image.Image]:
-    from .ocr import prepare_lines_as_images as _orig
-    return _orig(gif_bytes)
+    frames = gif_to_frames(gif_bytes)
+    all_lines: list[Image.Image] = []
+    for frame in frames:
+        cropped = crop_whitespace(frame)
+        if cropped is None:
+            continue
+        gray = np.array(cropped.convert('L'))
+        gaps = find_line_gaps(gray, min_gap=5)
+        lines = []
+        prev = 0
+        for gap_start, gap_end in gaps:
+            if gap_start - prev >= 10:
+                lines.append(cropped.crop((0, prev, cropped.width, gap_start)))
+            prev = gap_end
+        if cropped.height - prev >= 10:
+            lines.append(cropped.crop((0, prev, cropped.width, cropped.height)))
+        for line in lines:
+            h = line.height
+            crop_top = int(h * 0.2)
+            no_pinyin = line.crop((0, crop_top, line.width, h))
+            c = crop_whitespace(no_pinyin)
+            if c is not None:
+                all_lines.append(c)
+    return all_lines
+
+
+def image_to_bytes(image: Image.Image, format: str = 'PNG') -> bytes:
+    buffer = BytesIO()
+    image.save(buffer, format=format)
+    return buffer.getvalue()
+
+
+def split_lines(image: Image.Image, min_gap: int = 5, min_height: int = 10) -> list[Image.Image]:
+    gray = np.array(image.convert('L'))
+    gaps = find_line_gaps(gray, min_gap)
+    lines = []
+    prev = 0
+    for gap_start, gap_end in gaps:
+        if gap_start - prev >= min_height:
+            lines.append(image.crop((0, prev, image.width, gap_start)))
+        prev = gap_end
+    if image.height - prev >= min_height:
+        lines.append(image.crop((0, prev, image.width, image.height)))
+    return lines

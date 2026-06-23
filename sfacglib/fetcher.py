@@ -36,13 +36,16 @@ class RateLimiter:
 
     def wait(self, domain: str):
         delay = self._delays.get(domain, self._default_delay)
+        sleep_time = 0.0
         with self._lock:
             now = time()
             last = self._last_request.get(domain, 0.0)
             elapsed = now - last
             if elapsed < delay:
-                sleep(delay - elapsed)
-            self._last_request[domain] = time()
+                sleep_time = delay - elapsed
+            self._last_request[domain] = now + sleep_time
+        if sleep_time > 0:
+            sleep(sleep_time)
 
 
 class Fetcher:
@@ -67,6 +70,7 @@ class Fetcher:
         self.rate_limiter = RateLimiter(default_delay or DEFAULT_DELAY)
         self.session = requests.Session()
         self.auth = None
+        self._ua = random.choice(USER_AGENTS) if rotate_ua else USER_AGENTS[0]
 
         retry_strategy = Retry(
             total=max_retries,
@@ -104,9 +108,8 @@ class Fetcher:
         return False
 
     def _get_headers(self) -> dict[str, str]:
-        ua = random.choice(USER_AGENTS) if self.rotate_ua else USER_AGENTS[0]
         return {
-            'User-Agent': ua,
+            'User-Agent': self._ua,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -120,8 +123,9 @@ class Fetcher:
         """GET request with rate limiting, UA rotation, and retry."""
         domain = self._extract_domain(url)
         self.rate_limiter.wait(domain)
-        headers = {**self._get_headers(), **kwargs.pop('headers', {})}
-        timeout = kwargs.pop('timeout', self.timeout)
+        headers = {**self._get_headers(), **kwargs.get('headers', {})}
+        timeout = kwargs.get('timeout', self.timeout)
+        kwargs = {k: v for k, v in kwargs.items() if k not in ('headers', 'timeout')}
 
         logger.debug(f'GET {url}')
         resp = self.session.get(url, headers=headers, params=params, timeout=timeout, **kwargs)
@@ -132,18 +136,20 @@ class Fetcher:
         """POST request with rate limiting, UA rotation, and retry."""
         domain = self._extract_domain(url)
         self.rate_limiter.wait(domain)
-        headers = {**self._get_headers(), **kwargs.pop('headers', {})}
-        timeout = kwargs.pop('timeout', self.timeout)
+        headers = {**self._get_headers(), **kwargs.get('headers', {})}
+        timeout = kwargs.get('timeout', self.timeout)
+        kwargs = {k: v for k, v in kwargs.items() if k not in ('headers', 'timeout')}
 
         logger.debug(f'POST {url}')
         resp = self.session.post(url, headers=headers, timeout=timeout, **kwargs)
         resp.raise_for_status()
         return resp
 
-    def get_html(self, url: str, params: dict | None = None, encoding: str = 'utf-8') -> str:
+    def get_html(self, url: str, params: dict | None = None, encoding: str = '') -> str:
         """Fetch page HTML as string."""
         resp = self.get(url, params=params)
-        resp.encoding = encoding
+        if encoding:
+            resp.encoding = encoding
         return resp.text
 
     def get_json(self, url: str, params: dict | None = None) -> dict | list:

@@ -15,7 +15,12 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
     name = re.sub(r'\s+', '_', name)
     name = name.strip('_. ')
-    return name[:200] if name else ''
+    encoded = name.encode('utf-8')[:200]
+    while True:
+        try:
+            return encoded.decode('utf-8')
+        except UnicodeDecodeError:
+            encoded = encoded[:-1]
 
 
 def build_url(base: str, path: str) -> str:
@@ -32,9 +37,11 @@ def mobile_url(path: str) -> str:
 
 def parse_volume_ul(vol_tag: Tag) -> Tag | None:
     sibling = vol_tag.next_sibling
-    if sibling:
+    while sibling:
+        if hasattr(sibling, 'name') and sibling.name:
+            return sibling.ul if hasattr(sibling, 'ul') and sibling.ul else sibling
         sibling = sibling.next_sibling
-    return sibling.ul if sibling and hasattr(sibling, 'ul') else None
+    return None
 
 
 def run_tasks(
@@ -45,14 +52,14 @@ def run_tasks(
     leave: bool = True,
     initial: int = 0,
 ) -> list[tuple[str, object]]:
-    results: list[tuple[str, object]] = []
+    results_map: dict[str, object] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(fn, v): k for k, v in tasks.items()}
         for future in tqdm(as_completed(futures), total=len(futures), desc=desc, leave=leave, initial=initial):
             key = futures[future]
             try:
-                result = future.result()
-                results.append((key, result))
+                results_map[key] = future.result()
             except Exception as e:
                 logger.error(f'{desc} failed: {key} - {e}')
-    return results
+                results_map[key] = None
+    return [(k, results_map[k]) for k in tasks if k in results_map]

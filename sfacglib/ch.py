@@ -187,8 +187,9 @@ class VIPChapter(Ch):
             url=self.url, description='Cannot find VIP image URL or chapter IDs',
         )
 
-    def get_chapter_content(self) -> tuple[str, str]:
-        soup = self._soup()
+    def get_chapter_content(self, soup: BeautifulSoup | None = None) -> tuple[str, str]:
+        if soup is None:
+            soup = self._soup()
 
         title_tag = self.sel.find(soup, 'chapter_vip', 'title', url=self.url, required=False)
         title = title_tag.get_text().strip() if title_tag else '未知章节'
@@ -268,7 +269,7 @@ class Chapter(PCChapter):
         )
         if vip_ch._is_vip(soup):
             logger.info(f'VIP chapter detected: {self.url}')
-            content = vip_ch.get_chapter_content()
+            content = vip_ch.get_chapter_content(soup)
             self.title = vip_ch.title
             return content
 

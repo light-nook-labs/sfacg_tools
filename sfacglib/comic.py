@@ -48,8 +48,9 @@ class ComicChapter(Section):
         self.fetcher = fetcher
         self.sel = sel
 
-    def _get_args(self) -> list[str]:
-        html = self.fetcher.get_html(self.url)
+    def _get_args(self, html: str = '') -> list[str]:
+        if not html:
+            html = self.fetcher.get_html(self.url)
 
         patterns = [
             (r'var\s+c\s*=\s*(\d+)', 'comicId'),
@@ -81,8 +82,9 @@ class ComicChapter(Section):
                         args.append(match.group(1).strip('"'))
         return args
 
-    def _is_vip(self) -> bool:
-        html = self.fetcher.get_html(self.url)
+    def _is_vip(self, html: str = '') -> bool:
+        if not html:
+            html = self.fetcher.get_html(self.url)
         soup = BeautifulSoup(html, 'html.parser')
 
         for script in soup.find_all('script'):
@@ -99,7 +101,8 @@ class ComicChapter(Section):
         return False
 
     def get_image_urls(self, use_vip_api: bool = False) -> list[str]:
-        args = self._get_args()
+        html = self.fetcher.get_html(self.url)
+        args = self._get_args(html)
         if len(args) < 3:
             logger.error(f'Failed to extract comic args from {self.url}')
             return []
@@ -495,8 +498,8 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
             try:
                 cover_data = self.fetcher.get_binary(cover_url)
                 book.set_cover('cover.jpg', cover_data)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'封面下载失败: {e}')
 
         spine = ['nav']
         toc = []
@@ -550,6 +553,9 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
             from reportlab.lib.pagesizes import A4
             from reportlab.pdfgen import canvas
             from reportlab.lib.utils import ImageReader
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+            pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
         except ImportError:
             logger.error('需要安装 reportlab: uv add reportlab')
             return
@@ -577,7 +583,7 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
             if not ch_items:
                 continue
 
-            c.setFont('Helvetica-Bold', 16)
+            c.setFont('STSong-Light', 16)
             c.drawCentredString(width / 2, height - 50, section.title)
             c.showPage()
 

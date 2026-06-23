@@ -98,6 +98,9 @@ SFACG 需要 Cookie 登录：
 2. F12 → Network → 刷新页面 → 复制任意请求的 `Cookie` 头
 3. 写入 `.env` 文件的 `COOKIE=` 字段
 
+> [!NOTE]
+> Cookie 文件存储在 `~/.config/sfacg/.cookies.json`，权限为 `0600`（仅当前用户可读写）。
+
 ### ChatBot Agent
 
 `chatbot.py` 实现了一个 Agent（不仅仅是聊天机器人），可以陪你聊天，也可以通过自然语言理解意图，自动执行简单任务。复杂的任务会输出命令让用户自行运行。这个Agent在OCR流水线中实现最后一步llm纠正。
@@ -296,8 +299,7 @@ sfacglib/
   epub.py           # EPUB 生成
   convert.py        # 格式转换
   vip.py            # VIP 章节处理
-  ocr.py            # OCR 引擎（RapidOCR）
-  ocr_fast.py       # 优化 OCR（去拼音、rec_only、并行）
+  ocr_fast.py       # OCR 引擎（RapidOCR、去拼音、rec_only、并行）
   chatbot.py        # 聊天机器人（tool calling、OCR 纠错）
   nlp.py            # NLP 后处理（合并断行）
   progress.py       # 进度追踪（SQLite）

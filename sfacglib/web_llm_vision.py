@@ -69,7 +69,7 @@ def _is_valid_response(text: str) -> bool:
     t = text.strip()
     if not t:
         return False
-    if 'null' in t.lower():
+    if t.lower() == 'null':
         return False
     return True
 
@@ -291,6 +291,8 @@ class DeepSeekWebOCR:
         img = resize_to_max(image, 1000)
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
             img.save(tmp, format='PNG', optimize=True)
+            tmp.flush()
+            tmp.close()
             tmp_path = Path(tmp.name)
         try:
             page = await self.context.new_page()
@@ -311,7 +313,7 @@ class DeepSeekWebOCR:
         return asyncio.run(self._ocr_gif_async(gif_bytes, max_height))
 
     async def _ocr_gif_async(self, gif_bytes: bytes, max_height: int = 1500) -> str:
-        from sfacglib.ocr import gif_to_frames
+        from sfacglib.ocr_fast import gif_to_frames
 
         frames = gif_to_frames(gif_bytes)
         segments = []
@@ -348,7 +350,7 @@ class DeepSeekWebOCR:
         max_height: int = 1500,
         output_path: Path | None = None,
     ) -> list[tuple[str, str]]:
-        from sfacglib.ocr import gif_to_frames
+        from sfacglib.ocr_fast import gif_to_frames
 
         await self._init_browser()
         logger.info('DeepSeekWebOCR: Browser ready')

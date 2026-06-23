@@ -113,8 +113,8 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
     if cover_url:
         try:
             book.set_cover('cover.jpg', fetcher.get_binary(cover_url))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f'封面下载失败: {e}')
 
     spine = ['nav']
     toc = []
@@ -129,10 +129,16 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
             img_path = dir_path / item.get('file', '')
             if img_path.exists():
                 img_data = img_path.read_bytes()
-                fname = f'img_{sec["idx"]:03d}_{item.get("item_idx", 0):03d}.jpg'
+                fname = f'img_{sec["idx"]:03d}_{item.get("item_idx", 0):03d}{img_path.suffix}'
+                suffix = img_path.suffix.lower()
+                media_type = {
+                    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                    '.png': 'image/png', '.gif': 'image/gif',
+                    '.webp': 'image/webp',
+                }.get(suffix, 'image/jpeg')
                 book.add_item(epub.EpubImage(
                     file_name=f'images/{fname}',
-                    media_type='image/jpeg',
+                    media_type=media_type,
                     content=img_data,
                 ))
                 ch_html += f'<img src="images/{fname}" alt="">'
@@ -163,6 +169,9 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0):
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
         from reportlab.lib.utils import ImageReader
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
     except ImportError:
         logger.error('需要安装 reportlab: uv add reportlab')
         return None
@@ -182,7 +191,7 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0):
         if not ch_items:
             continue
 
-        c.setFont('Helvetica-Bold', 16)
+        c.setFont('STSong-Light', 16)
         c.drawCentredString(width / 2, height - 50, sec['title'])
         c.showPage()
 

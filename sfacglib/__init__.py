@@ -34,12 +34,12 @@ from .epub import download_epub, convert_html_to_epub, convert_md_to_epub
 from .progress import ProgressTracker
 from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks
 from .vip import VipMode, process_vip_chapter
-from .ocr import (
+from .ocr_fast import (
     ocr_image, ocr_bytes, ocr_gif,
     prepare_lines_as_images, image_to_bytes,
     ocr_gif_with_llm, ocr_image_with_llm,
+    remove_pinyin, remove_pinyin_gif, remove_pinyin_to_bytes,
 )
-from .ocr_fast import remove_pinyin, remove_pinyin_gif, remove_pinyin_to_bytes
 from .llm_vision import LLMVision, LLMProvider, create_llm_vision
 from .web_llm_vision import DeepSeekWebOCR, split_by_height, resize_to_max, deduplicate_texts, create_web_llm_vision
 from .chatbot import ChatBot, interactive_chat

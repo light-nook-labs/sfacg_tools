@@ -67,6 +67,7 @@ def _process_images(
 
 
 def _md_to_html(md_text: str) -> str:
+    from html import escape
     lines = md_text.split('\n')
     html_lines = []
     in_list = False
@@ -84,27 +85,27 @@ def _md_to_html(md_text: str) -> str:
             if in_list:
                 html_lines.append('</ul>')
                 in_list = False
-            html_lines.append(f'<h4>{stripped[5:]}</h4>')
+            html_lines.append(f'<h4>{escape(stripped[5:])}</h4>')
         elif stripped.startswith('### '):
             if in_list:
                 html_lines.append('</ul>')
                 in_list = False
-            html_lines.append(f'<h3>{stripped[4:]}</h3>')
+            html_lines.append(f'<h3>{escape(stripped[4:])}</h3>')
         elif stripped.startswith('## '):
             if in_list:
                 html_lines.append('</ul>')
                 in_list = False
-            html_lines.append(f'<h2>{stripped[3:]}</h2>')
+            html_lines.append(f'<h2>{escape(stripped[3:])}</h2>')
         elif stripped.startswith('# '):
             if in_list:
                 html_lines.append('</ul>')
                 in_list = False
-            html_lines.append(f'<h1>{stripped[2:]}</h1>')
+            html_lines.append(f'<h1>{escape(stripped[2:])}</h1>')
         elif stripped.startswith('- ') or stripped.startswith('* '):
             if not in_list:
                 html_lines.append('<ul>')
                 in_list = True
-            html_lines.append(f'<li>{stripped[2:]}</li>')
+            html_lines.append(f'<li>{escape(stripped[2:])}</li>')
         elif stripped.startswith('![', 0) and '](' in stripped and stripped.endswith(')'):
             if in_list:
                 html_lines.append('</ul>')
@@ -112,7 +113,7 @@ def _md_to_html(md_text: str) -> str:
             match = re.match(r'!\[([^\]]*)\]\(([^)]+)\)', stripped)
             if match:
                 alt, src = match.groups()
-                html_lines.append(f'<img src="{src}" alt="{alt}">')
+                html_lines.append(f'<img src="{escape(src)}" alt="{escape(alt)}">')
         elif stripped == '---' or stripped == '***':
             if in_list:
                 html_lines.append('</ul>')
@@ -122,7 +123,7 @@ def _md_to_html(md_text: str) -> str:
             if in_list:
                 html_lines.append('</ul>')
                 in_list = False
-            html_lines.append(f'<p>{stripped}</p>')
+            html_lines.append(f'<p>{escape(stripped)}</p>')
 
     if in_list:
         html_lines.append('</ul>')
@@ -217,7 +218,8 @@ def download_epub(
     book.add_item(epub.EpubNav())
     book.spine = spine
 
-    safe_title = title.replace('/', '_').replace('\\', '_')
+    from .utils import sanitize_filename
+    safe_title = sanitize_filename(title)
     epub_path = path / f'{safe_title}.epub'
     try:
         epub.write_epub(name=str(epub_path), book=book)
@@ -317,7 +319,8 @@ def convert_md_to_epub(
     book.add_item(epub.EpubNav())
     book.spine = spine
 
-    safe_title = title.replace('/', '_').replace('\\', '_')
+    from .utils import sanitize_filename
+    safe_title = sanitize_filename(title)
     epub_path = path / f'{safe_title}.epub'
     try:
         epub.write_epub(name=str(epub_path), book=book)

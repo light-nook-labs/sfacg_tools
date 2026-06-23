@@ -3,6 +3,8 @@ from pathlib import Path
 PACKAGE_DIR = Path(__file__).parent
 PROJECT_DIR = PACKAGE_DIR.parent
 
+_CONFIG_DIR = Path.home() / '.config' / 'sfacg'
+
 MOBILE_BASE = 'https://m.sfacg.com'
 PC_BASE = 'https://book.sfacg.com'
 COMIC_BASE = 'https://mm.sfacg.com'
@@ -31,10 +33,10 @@ URL_LOGIN_API_MOB = f'{PASSPORT_BASE}/Ajax/QuickLoginCross.ashx'
 URL_CHECK_AUTH = f'{MOBILE_BASE}/'
 
 SELECTORS_PATH: Path = PACKAGE_DIR / 'selectors.json'
-COOKIE_PATH: Path = PACKAGE_DIR / '.cookies.json'
+COOKIE_PATH: Path = _CONFIG_DIR / '.cookies.json'
 AUDIOBOOKS_JSON: Path = PACKAGE_DIR / 'audiobooks.json'
 
-DEFAULT_DELAY: float = 0.05
+DEFAULT_DELAY: float = 0.2
 MAX_RETRIES: int = 3
 TIMEOUT: tuple[int, int] = (15, 30)
 

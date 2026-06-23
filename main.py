@@ -166,7 +166,7 @@ def cmd_web(args):
 
 
 def cmd_ocr(args):
-    from sfacglib.ocr import ocr_image
+    from sfacglib.ocr_fast import ocr_image
     text = ocr_image(args.source, workers=args.workers)
     if args.output:
         out = Path(args.output)

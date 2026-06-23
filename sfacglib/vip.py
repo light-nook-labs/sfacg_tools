@@ -1,7 +1,6 @@
 import tempfile
 import time
 import random
-import threading
 from enum import Enum
 from pathlib import Path
 from io import BytesIO
@@ -13,9 +12,6 @@ from .config import OCR_WORKERS
 
 _VIP_DELAY_RANGE = (2.0, 5.0)
 _VIP_RETRY_DELAYS = [10, 20, 40]
-
-_vip_lock = threading.Lock()
-_vip_last_request = 0.0
 
 
 def _validate_gif(gif_bytes: bytes, expected_width: int = 0) -> tuple[bool, str]:
@@ -31,15 +27,12 @@ def _validate_gif(gif_bytes: bytes, expected_width: int = 0) -> tuple[bool, str]
         return False, f'invalid: {e}'
 
 
-def _vip_rate_limit():
-    global _vip_last_request
-    with _vip_lock:
-        now = time.time()
-        elapsed = now - _vip_last_request
+def _vip_rate_limit(fetcher: Fetcher | None = None):
+    if fetcher:
+        fetcher.rate_limiter.wait('vip.sfacg.com')
+    else:
         delay = random.uniform(*_VIP_DELAY_RANGE)
-        if elapsed < delay:
-            time.sleep(delay - elapsed)
-        _vip_last_request = time.time()
+        time.sleep(delay)
 
 
 class VipMode(Enum):
@@ -134,7 +127,7 @@ def process_vip_chapter(
             logger.warning(f'VIP retry {attempt}/{len(_VIP_RETRY_DELAYS)} after {delay}s...')
             time.sleep(delay)
 
-        _vip_rate_limit()
+        _vip_rate_limit(fetcher)
         logger.info(f'Downloading VIP image (attempt {attempt + 1}): {image_url}')
         resp = fetcher.get(image_url)
         gif_bytes = resp.content
@@ -156,7 +149,7 @@ def process_vip_chapter(
         gif_path.write_bytes(gif_bytes)
 
     if mode == VipMode.RAW:
-        from .ocr import gif_to_frames
+        from .ocr_fast import gif_to_frames
         frames = gif_to_frames(gif_bytes)
         if save_dir is None:
             save_dir = Path(tempfile.mkdtemp(prefix='sfacg_vip_'))
@@ -211,7 +204,4 @@ def process_vip_chapter(
         logger.warning('No text extracted from VIP image')
 
     frame_paths = []
-    if save_dir:
-        frame_paths = list(save_dir.glob('frame_*.png'))
-
     return text, frame_paths
