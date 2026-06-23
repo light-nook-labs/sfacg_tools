@@ -214,10 +214,10 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
   .print-toc h2 { font-size: 18pt; margin-bottom: 16pt; border-bottom: 2pt solid #333; padding-bottom: 6pt; }
   .print-toc .ptoc-vol { font-size: 12pt; margin-bottom: 6pt; }
   .novel-header .cover { width: 100%; max-width: 100%; margin: 0 auto; }
-  .chapter img { max-width: 80%; break-inside: avoid; page-break-inside: avoid; display: block; margin: 12px auto; }
+  .chapter .img-wrap { break-inside: avoid; page-break-inside: avoid; margin: 12px 0; }
+  .chapter .img-wrap img { max-width: 80%; display: block; margin: 0 auto; }
   .chapter p { break-inside: avoid; page-break-inside: avoid; }
   .volume > h2 { page-break-before: always; }
-  .chapter { break-inside: auto; page-break-inside: auto; }
   .chapter > h3 { break-after: avoid; page-break-after: avoid; }
   body { font-size: 11pt; line-height: 1.7; }
   a { color: var(--text); text-decoration: none; }
@@ -299,7 +299,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
                     src = item.get('file', '')
                 else:
                     src = item.get('item_url', '')
-                html_parts.append(f'<img src="{html_escape(src)}" alt="" loading="lazy">')
+                html_parts.append(f'<div class="img-wrap"><img src="{html_escape(src)}" alt="" loading="lazy"></div>')
             else:
                 text = _read_item_text(dir_path, item)
                 if text:
@@ -312,7 +312,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
                             alt, src = img_match.group(1), img_match.group(2)
                             if src.startswith('//'):
                                 src = 'https:' + src
-                            html_parts.append(f'<img src="{html_escape(src)}" alt="{html_escape(alt)}" loading="lazy">')
+                            html_parts.append(f'<div class="img-wrap"><img src="{html_escape(src)}" alt="{html_escape(alt)}" loading="lazy"></div>')
                         else:
                             html_parts.append(f'<p>{html_escape(para)}</p>')
             html_parts.append('</div>')
