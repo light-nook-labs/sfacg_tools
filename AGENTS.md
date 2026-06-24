@@ -134,4 +134,4 @@ See [README.md](README.md#快速开始) for all CLI commands and GUI options.
 ## Important Files
 
 - `common.gif` — Test VIP chapter image for OCR testing, **DO NOT DELETE**
-- `ch_069_第六十八章_我们私奔吧！.gif` — Test GIF for Web LLM OCR prompt tuning. 5 segments (728x6021), last segment is empty (boundary test). Path: `output/反派小姐，瞎撩女主是会被清算的/vol_001_.../ch_069_第六十八章_我们私奔吧！.gif`
+
