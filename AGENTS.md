@@ -12,13 +12,13 @@ Multi-content-type web scraper for [SF Light Novel (sfacg.com)](https://book.sfa
 sfacglib/
   __init__.py     # Package exports
   models.py       # Pydantic data models (SearchItem, Catalog, CatalogSection, CatalogItem)
-  base.py         # Abstract base classes: Container, Section, Item, Ch + _filter_items
+  base.py         # Abstract base classes: Container, Section, Item + _filter_items
   config.py       # Centralized constants + Pydantic Settings + VipMode enum
   fetcher.py      # Smart HTTP fetcher (rotating UA, retry, rate limiting, auth)
   auth.py         # Login, session persistence, cookie management (GetLoginInfo API)
   selectors.py    # CSS selector registry (loads from selectors.json)
   selectors.json  # All CSS selectors, organized by page type
-  novel.py        # Novel downloader + Chapter classes + VIP processing
+  novel.py        # Novel downloader + NovelChapter + VIP processing
   comic.py        # Comic downloader (ComicChapter, ComicPage)
   audio.py        # Audiobook downloader (AudioVolume, AudioChapter)
   epub.py         # EPUB generation with three-level TOC

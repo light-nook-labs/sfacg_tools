@@ -393,8 +393,7 @@ sfacglib/
   auth.py           # Cookie 管理（GetLoginInfo API 验证）
   selectors.py      # CSS 选择器注册表
   selectors.json    # CSS 选择器定义
-  ch.py             # 章节内容抓取 + VIP 处理（OCR/LLM/RAW）
-  novel.py          # 小说下载器
+  novel.py          # 小说下载器 + NovelChapter/VIP处理
   comic.py          # 漫画下载器
   audio.py          # 有声下载器
   epub.py           # EPUB 生成
