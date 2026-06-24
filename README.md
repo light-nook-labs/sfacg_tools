@@ -111,12 +111,12 @@ uv run python main.py search <novel_id> --author-works
 
 ```python
 # Python API
-from sfacglib.search import search_novel, search_comic, search_api, get_related, get_author_works
+from sfacglib.search import search_novel, search_comic, search_novel_api, get_related, get_author_works
 from sfacglib.models import SearchItem  # Pydantic 模型
 
 results = search_novel('魔法少女')       # HTML 搜索
 results = search_comic('魔法')           # 漫画搜索
-results = search_api('转生')             # JSON API（带评分）
+results = search_novel_api('转生')             # JSON API（带评分）
 results = get_related('43708')           # 相关推荐
 results = get_author_works('43708')      # 作者作品
 

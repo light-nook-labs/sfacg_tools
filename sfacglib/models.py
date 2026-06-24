@@ -1,5 +1,7 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
+from pathlib import Path
+import json
 
 
 class SearchItem(BaseModel):
@@ -38,8 +40,6 @@ class Catalog(BaseModel):
 
     @classmethod
     def load(cls, path) -> Catalog:
-        from pathlib import Path
-        import json
         path = Path(path)
         data = json.loads(path.read_text(encoding='utf-8'))
         return cls._migrate(data)

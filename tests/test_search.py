@@ -2,7 +2,7 @@ import pytest
 from sfacglib.search import (
     _deduplicate,
     _parse_html_results,
-    search_api,
+    search_novel_api,
     get_related,
     get_author_works,
 )
@@ -148,7 +148,7 @@ class TestSearchApi:
             return mock_data
 
         monkeypatch.setattr(Fetcher, 'get_json', mock_get_json)
-        results = search_api('test')
+        results = search_novel_api('test')
         assert len(results) == 2
         assert results[0].id == '43708'
         assert results[0].title == 'Test Novel'
@@ -163,7 +163,7 @@ class TestSearchApi:
             return {}
 
         monkeypatch.setattr(Fetcher, 'get_json', mock_get_json)
-        results = search_api('nonexistent')
+        results = search_novel_api('nonexistent')
         assert results == []
 
     def test_api_response_no_novels_key(self, monkeypatch):
@@ -173,7 +173,7 @@ class TestSearchApi:
             return {'error': 'something'}
 
         monkeypatch.setattr(Fetcher, 'get_json', mock_get_json)
-        results = search_api('test')
+        results = search_novel_api('test')
         assert results == []
 
 

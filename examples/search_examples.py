@@ -2,13 +2,13 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from sfacglib.search import search_novel, search_comic, search_api, get_related, get_author_works
+from sfacglib.search import search_novel, search_comic, search_novel_api, get_related, get_author_works, search
 from sfacglib.models import SearchItem
 
 
 def demo_search_novel():
     """HTML 搜索小说"""
-    results = search_novel('魔法少女')
+    results = search_novel('三国正史')
     print(f'找到 {len(results)} 本小说:')
     for idx, r in enumerate(results, start=1):
         print(f'[{idx}] {r.title}#{r.id} - {r.author}')
@@ -23,10 +23,17 @@ def demo_search_comic():
     for idx, r in enumerate(results, start=1):
         print(f'[{idx}] {r.title} - {r.author}')
 
+def demo_search():
+    """HTML 搜索漫画"""
+    results = search('魔法')
+    print(f'找到 {len(results)} 部作品:')
+    for idx, r in enumerate(results, start=1):
+        print(f'[{idx}] {r.title} - {r.author}')
 
-def demo_search_api():
+
+def demo_search_novel_api():
     """JSON API 搜索（带评分）"""
-    results = search_api('转生')
+    results = search_novel_api('转生')
     print(f'API 搜索找到 {len(results)} 本:')
     for r in results:
         score = r.score or '无评分'
@@ -54,6 +61,7 @@ def demo_get_author_works():
 if __name__ == '__main__':
     # demo_search_novel()
     # demo_search_comic()
-    # demo_search_api()
-    demo_get_related()
-    demo_get_author_works()
+    # demo_search()
+    demo_search_novel_api()
+    # demo_get_related()
+    # demo_get_author_works()

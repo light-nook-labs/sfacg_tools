@@ -160,13 +160,13 @@ def cmd_web(args):
 
 
 def cmd_search(args):
-    from sfacglib.search import search, search_api, get_related, get_author_works
+    from sfacglib.search import search, search_novel_api, get_related, get_author_works
     if args.related:
         results = get_related(args.keyword)
     elif args.author_works:
         results = get_author_works(args.keyword)
     elif args.api:
-        results = search_api(args.keyword)
+        results = search_novel_api(args.keyword)
     else:
         search_type = 'comic' if args.comic else 'novel'
         results = search(args.keyword, search_type)
