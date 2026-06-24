@@ -46,9 +46,9 @@ def cmd_novel(args):
 
 
 def cmd_chapter(args):
-    from sfacglib.novel import Chapter
+    from sfacglib.novel import NovelChapter
     f = _get_fetcher()
-    ch = Chapter(args.url, fetcher=f)
+    ch = NovelChapter(url=args.url, fetcher=f)
     md, html = ch.get_chapter_content()
     content = md if args.format == 'md' else html
     out = Path(args.output)

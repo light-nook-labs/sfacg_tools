@@ -27,8 +27,8 @@ from .models import SearchItem, CatalogItem, CatalogSection, Catalog
 from .fetcher import Fetcher
 from .auth import Auth
 from .selectors import Selectors, SelectorError
-from .base import Container, Section, Item, Ch
-from .novel import Novel, Chapter, MobileChapter, PCChapter, VIPChapter, process_vip_chapter
+from .base import Container, Section, Item
+from .novel import Novel, NovelChapter, process_vip_chapter
 from .comic import Comic, ComicChapter
 from .audio import Audio, AudioChapter, AudioVolume
 from .epub import download_epub, convert_html_to_epub, convert_md_to_epub
@@ -48,8 +48,8 @@ from .search import search_novel, search_comic, search, search_api, get_related,
 __all__ = [
     'Fetcher', 'Auth',
     'Selectors', 'SelectorError',
-    'Chapter', 'MobileChapter', 'PCChapter', 'VIPChapter',
-    'Container', 'Section', 'Item', 'Ch',
+    'NovelChapter',
+    'Container', 'Section', 'Item',
     'Novel',
     'Comic', 'ComicChapter',
     'Audio', 'AudioChapter', 'AudioVolume',

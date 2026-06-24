@@ -2,19 +2,16 @@ import re
 import time
 import random
 import tempfile
-import threading
 from pathlib import Path
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 from loguru import logger
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
 from .fetcher import Fetcher
 from .selectors import Selectors, SelectorError
-from .base import Container, Section, Item, Ch, _sanitize_filename, AntiScrapingError
+from .base import Container, Section, Item, _sanitize_filename
 from .config import (
-    URL_NOVEL_INDEX, URL_NOVEL_MENU, MOBILE_BASE, PC_BASE, WORKERS_CHAPTER,
+    URL_NOVEL_INDEX, URL_NOVEL_MENU, PC_BASE,
     URL_REVIEW_LIST, URL_REVIEW_DETAIL, API_HTML5, API_VIP_IMAGE, VIP_IMAGE_WIDTH,
-    VIP_DELAY_RANGE, VIP_RETRY_DELAYS, VIP_TIMEOUT, VipMode, settings, CORRECT_OCR_SYSTEM_PROMPT,
+    VIP_DELAY_RANGE, VIP_RETRY_DELAYS, VipMode, settings, CORRECT_OCR_SYSTEM_PROMPT,
     OCR_WORKERS,
 )
 from .progress import ProgressTracker, _extract_id
@@ -168,35 +165,73 @@ def process_vip_chapter(
     return text, frame_paths
 
 
-class MobileChapter(Ch):
+class NovelChapter(Item):
 
-    def get_chapter_content(self) -> tuple[str, str]:
-        soup = self._soup()
+    def __init__(self, idx: int = 0, title: str = '', url: str = '',
+                 fetcher: Fetcher | None = None, sel: Selectors | None = None,
+                 nid: str = '', vip: bool = False):
+        super().__init__(idx, title, url)
+        self.fetcher = fetcher or Fetcher()
+        self.sel = sel or Selectors()
+        self.nid = nid
+        self.vip = vip
 
-        title_tag = soup.title
-        if title_tag and ' - ' in title_tag.get_text():
-            title = title_tag.get_text().split(' - ')[1]
+    def download(self, save_path: Path, pbar=None, lock=None):
+        if save_path.exists() or save_path.with_suffix('.gif').exists():
+            logger.debug(f'Skip existing: {save_path.name}')
+        elif self.vip:
+            self._download_vip_gif(save_path)
         else:
-            title = self.sel.find_text(soup, 'chapter_mobile', 'title', url=self.url) or '未知章节'
-        self.title = title
+            self._download_normal(save_path)
+        if pbar and lock:
+            with lock:
+                pbar.update(1)
 
-        content_html = self.sel.find(soup, 'chapter_mobile', 'content_container', url=self.url)
-        if content_html and content_html.has_attr('style'):
-            del content_html['style']
+    def _download_normal(self, save_path: Path):
+        md, _html = self.get_chapter_content()
+        save_path.write_text(md, encoding='utf-8')
 
-        content_md = f'### {self.title}\n\n'
-        if content_html:
-            content_md += self._parse_children(content_html)
+    def _download_vip_gif(self, save_path: Path):
+        gif_path = save_path.with_suffix('.gif')
+        cid = _extract_id(self.url)
+        src = f'{API_VIP_IMAGE}?op=getChapPic&tp=true&quick=true&cid={cid}&nid={self.nid}&font=16&lang=&w={VIP_IMAGE_WIDTH}'
 
-        content_md = content_md.lstrip()
-        html_str = f'<div class="ch"><h3>{self.title}</h3>{str(content_html) if content_html else ""}</div>'
-        return content_md, html_str
+        gif_bytes = self.fetcher.get(src, headers={'Referer': self.url}, timeout=(10, 30)).content
 
+        valid, info = validate_gif(gif_bytes, VIP_IMAGE_WIDTH)
+        if not valid:
+            raise ValueError(f'VIP GIF invalid (not subscribed?): {info} ({self.url})')
 
-class PCChapter(Ch):
+        gif_path.write_bytes(gif_bytes)
+        logger.info(f'VIP GIF: {gif_path.name} ({len(gif_bytes)} bytes)')
 
     def get_chapter_content(self) -> tuple[str, str]:
+        if 'book' not in self.url:
+            soup = self._soup()
+            title_tag = soup.title
+            if title_tag and ' - ' in title_tag.get_text():
+                title = title_tag.get_text().split(' - ')[1]
+            else:
+                title = self.sel.find_text(soup, 'chapter_mobile', 'title', url=self.url) or '未知章节'
+            self.title = title
+
+            content_html = self.sel.find(soup, 'chapter_mobile', 'content_container', url=self.url)
+            if content_html and content_html.has_attr('style'):
+                del content_html['style']
+
+            content_md = f'### {title}\n\n'
+            if content_html:
+                content_md += self._parse_children(content_html)
+
+            content_md = content_md.lstrip()
+            html_str = f'<div class="ch"><h3>{title}</h3>{str(content_html) if content_html else ""}</div>'
+            return content_md, html_str
+
         soup = self._soup()
+
+        if self._is_vip(soup):
+            logger.info(f'VIP chapter detected: {self.url}')
+            return self._get_vip_content(soup)
 
         self.sel.find(soup, 'chapter_pc', 'header', url=self.url)
         title_tag = self.sel.find(soup, 'chapter_pc', 'title', url=self.url)
@@ -219,30 +254,30 @@ class PCChapter(Ch):
 
         return content_md, f'<div class="ch">{content_html}</div>'
 
+    def _soup(self) -> BeautifulSoup:
+        html = self.fetcher.get_html(self.url)
+        return BeautifulSoup(html, 'html.parser')
 
-class VIPChapter(Ch):
+    @staticmethod
+    def _parse_children(container: Tag) -> str:
+        md = ''
+        for child in container.children:
+            if isinstance(child, NavigableString):
+                text = str(child).strip()
+                if text:
+                    md += f'{text}\n\n'
+            elif isinstance(child, Tag):
+                if child.name == 'img':
+                    src = child.get('src', '')
+                    md += f'![]({src})\n\n'
+                elif child.name == 'p':
+                    md += f'{child.get_text().strip()}\n\n'
+                elif child.name == 'br':
+                    continue
+        return md
 
-    IMAGE_API_BASE = API_VIP_IMAGE
-
-    def __init__(
-        self,
-        url: str = '',
-        fetcher: Fetcher | None = None,
-        selectors: Selectors | None = None,
-        vip_mode: VipMode = VipMode.OCR,
-        save_frames_dir: Path | None = None,
-        llm_api_key: str = '',
-        llm_base_url: str = '',
-        llm_model: str = '',
-    ):
-        super().__init__(url, fetcher, selectors)
-        self.vip_mode = vip_mode
-        self.save_frames_dir = save_frames_dir
-        self.llm_api_key = llm_api_key
-        self.llm_base_url = llm_base_url
-        self.llm_model = llm_model
-
-    def _is_vip(self, soup: BeautifulSoup) -> bool:
+    @staticmethod
+    def _is_vip(soup: BeautifulSoup) -> bool:
         if soup.select_one('#vipImage'):
             return True
         for script in soup.find_all('script'):
@@ -291,17 +326,14 @@ class VIPChapter(Ch):
 
         novel_id, chapter_id = self._extract_chapter_ids(soup)
         if novel_id and chapter_id:
-            return f'{self.IMAGE_API_BASE}?op=getChapPic&tp=true&quick=true&cid={chapter_id}&nid={novel_id}&font=16&lang=&w={VIP_IMAGE_WIDTH}'
+            return f'{API_VIP_IMAGE}?op=getChapPic&tp=true&quick=true&cid={chapter_id}&nid={novel_id}&font=16&lang=&w={VIP_IMAGE_WIDTH}'
 
         raise SelectorError(
             page='chapter_vip', field='vip_image', selector='#vipImage',
             url=self.url, description='Cannot find VIP image URL or chapter IDs',
         )
 
-    def get_chapter_content(self, soup: BeautifulSoup | None = None) -> tuple[str, str]:
-        if soup is None:
-            soup = self._soup()
-
+    def _get_vip_content(self, soup: BeautifulSoup) -> tuple[str, str]:
         title_tag = self.sel.find(soup, 'chapter_vip', 'title', url=self.url, required=False)
         title = title_tag.get_text().strip() if title_tag else '未知章节'
         self.title = title
@@ -310,24 +342,15 @@ class VIPChapter(Ch):
         other_info = '\t'.join(tag.get_text() for tag in other_info_tags) if other_info_tags else ''
 
         img_url = self._build_image_url(soup)
-        logger.info(f'VIP chapter [{self.vip_mode.value}]: {img_url}')
+        logger.info(f'VIP chapter [OCR]: {img_url}')
 
         text, frame_paths = process_vip_chapter(
             image_url=img_url,
-            mode=self.vip_mode,
-            save_dir=self.save_frames_dir,
-            llm_api_key=self.llm_api_key,
-            llm_base_url=self.llm_base_url,
-            llm_model=self.llm_model,
+            mode=VipMode.OCR,
             fetcher=self.fetcher,
         )
 
-        if self.vip_mode == VipMode.RAW:
-            img_tags = ''.join(f'<img src="{p}">' for p in frame_paths)
-            md_imgs = '\n\n'.join(f'![frame_{i}]({p})' for i, p in enumerate(frame_paths))
-            content_md = f'### {title}\n\n{other_info}\n\n{md_imgs}\n\n'
-            content_html = f'<div class="ch"><h3>{title}</h3><p>{other_info}</p>{img_tags}</div>'
-        elif text:
+        if text:
             content_md = f'### {title}\n\n{other_info}\n\n{text}\n\n'
             content_html = (
                 f'<div class="ch"><h3>{title}</h3><p>{other_info}</p>'
@@ -338,97 +361,6 @@ class VIPChapter(Ch):
             content_html = f'<div class="ch"><h3>{title}</h3><p>{other_info}</p><img src="{img_url}"></div>'
 
         return content_md, content_html
-
-
-class Chapter(PCChapter):
-
-    def __init__(
-        self,
-        url: str = '',
-        fetcher: Fetcher | None = None,
-        selectors: Selectors | None = None,
-        vip_mode: VipMode = VipMode.OCR,
-        save_frames_dir: Path | None = None,
-        llm_api_key: str = '',
-        llm_base_url: str = '',
-        llm_model: str = '',
-    ):
-        super().__init__(url, fetcher, selectors)
-        self.vip_mode = vip_mode
-        self.save_frames_dir = save_frames_dir
-        self.llm_api_key = llm_api_key
-        self.llm_base_url = llm_base_url
-        self.llm_model = llm_model
-
-    def get_chapter_content(self) -> tuple[str, str]:
-        if 'book' not in self.url:
-            chapter = MobileChapter(self.url, self.fetcher, self.sel)
-            content = chapter.get_chapter_content()
-            self.title = chapter.title
-            return content
-
-        soup = self._soup()
-        vip_ch = VIPChapter(
-            url=self.url,
-            fetcher=self.fetcher,
-            selectors=self.sel,
-            vip_mode=self.vip_mode,
-            save_frames_dir=self.save_frames_dir,
-            llm_api_key=self.llm_api_key,
-            llm_base_url=self.llm_base_url,
-            llm_model=self.llm_model,
-        )
-        if vip_ch._is_vip(soup):
-            logger.info(f'VIP chapter detected: {self.url}')
-            content = vip_ch.get_chapter_content(soup)
-            self.title = vip_ch.title
-            return content
-
-        chapter = PCChapter(self.url, self.fetcher, self.sel)
-        content = chapter.get_chapter_content()
-        self.title = chapter.title
-        return content
-
-
-class NovelChapter(Item):
-
-    def __init__(self, idx: int, title: str, url: str, fetcher: Fetcher, sel: Selectors,
-                 nid: str = '', vip: bool = False):
-        super().__init__(idx, title, url)
-        self.fetcher = fetcher
-        self.sel = sel
-        self.nid = nid
-        self.vip = vip
-
-    def download(self, save_path: Path, pbar=None, lock=None):
-        if save_path.exists() or save_path.with_suffix('.gif').exists():
-            logger.debug(f'Skip existing: {save_path.name}')
-        elif self.vip:
-            self._download_vip_gif(save_path)
-        else:
-            self._download_normal(save_path)
-        if pbar and lock:
-            with lock:
-                pbar.update(1)
-
-    def _download_normal(self, save_path: Path):
-        ch = PCChapter(self.url, self.fetcher, self.sel)
-        md, html = ch.get_chapter_content()
-        save_path.write_text(md, encoding='utf-8')
-
-    def _download_vip_gif(self, save_path: Path):
-        gif_path = save_path.with_suffix('.gif')
-        cid = _extract_id(self.url)
-        src = f'{API_VIP_IMAGE}?op=getChapPic&tp=true&quick=true&cid={cid}&nid={self.nid}&font=16&lang=&w={VIP_IMAGE_WIDTH}'
-
-        gif_bytes = self.fetcher.get(src, headers={'Referer': self.url}, timeout=(10, 30)).content
-
-        valid, info = validate_gif(gif_bytes, VIP_IMAGE_WIDTH)
-        if not valid:
-            raise ValueError(f'VIP GIF invalid (not subscribed?): {info} ({self.url})')
-
-        gif_path.write_bytes(gif_bytes)
-        logger.info(f'VIP GIF: {gif_path.name} ({len(gif_bytes)} bytes)')
 
 
 class NovelVolume(Section):
