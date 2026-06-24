@@ -3,13 +3,10 @@ from loguru import logger
 from bs4 import BeautifulSoup, Tag
 from .fetcher import Fetcher
 from .config import SEARCH_BASE, API_HTML5, PC_BASE, SEARCH_SNIPPET_LENGTH
+from .config import COVER_BASE
 from .models import SearchItem
 from .utils import fix_url_protocol
 
-
-COVER_BASE = 'https://rs.sfacg.com/web/novel/images/NovelCover/Big'
-
-SearchResult = SearchItem
 
 
 def _deduplicate(results: list[SearchItem]) -> list[SearchItem]:

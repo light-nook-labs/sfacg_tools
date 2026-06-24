@@ -13,6 +13,7 @@ COMIC_BASE = 'https://mm.sfacg.com'
 COMIC_READER_BASE = 'https://manhua.sfacg.com'
 PASSPORT_BASE = 'https://passport.sfacg.com'
 SEARCH_BASE = 'https://s.sfacg.com'
+COVER_BASE = 'https://rs.sfacg.com/web/novel/images/NovelCover/Big'
 
 API_HTML5 = f'{MOBILE_BASE}/API/HTML5.ashx'
 API_COMIC_PICS = f'{COMIC_BASE}/ajax/Common.ashx'
@@ -115,7 +116,7 @@ settings = Settings()
 
 __all__ = [
     'PACKAGE_DIR', 'PROJECT_DIR',
-    'MOBILE_BASE', 'PC_BASE', 'COMIC_BASE', 'COMIC_READER_BASE', 'PASSPORT_BASE', 'SEARCH_BASE',
+    'MOBILE_BASE', 'PC_BASE', 'COMIC_BASE', 'COMIC_READER_BASE', 'PASSPORT_BASE', 'SEARCH_BASE', 'COVER_BASE'
     'API_HTML5', 'API_COMIC_PICS', 'API_VIP_IMAGE', 'API_COMIC_VIP',
     'URL_NOVEL_INDEX', 'URL_NOVEL_MENU', 'URL_REVIEW_LIST', 'URL_REVIEW_DETAIL',
     'URL_AUDIO', 'URL_LOGIN_PC', 'URL_LOGIN_API_PC', 'URL_LOGIN_API_MOB', 'URL_CHECK_AUTH',

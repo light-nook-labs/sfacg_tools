@@ -1,5 +1,5 @@
 [project]
-name = "sfacg"
+name = "sfacg_tools"
 version = "1.0.0"
 description = "SF轻小说多内容下载器 - 小说/漫画/有声/评论"
 readme = "README.md"

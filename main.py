@@ -12,6 +12,7 @@ Usage:
     uv run python main.py app
 """
 import sys
+import re
 import argparse
 from pathlib import Path
 from loguru import logger
