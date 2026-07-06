@@ -11,9 +11,7 @@ class CatalogItem(BaseModel):
     title: str
     url: str = ''
     file: str = ''
-    status: str = 'pending'  # pending | done | failed
     vip_mode: str = ''  # '' | 'encrypted' | 'image'
-    error: str = ''
 
 
 class CatalogSection(BaseModel):
@@ -127,7 +125,6 @@ class Catalog(BaseModel):
                         title=item.title,
                         url=item.url,
                         file=f'{dir_name}/{filename}',
-                        status='pending',
                         vip_mode=getattr(item, 'vip_mode', ''),
                     )
                 )

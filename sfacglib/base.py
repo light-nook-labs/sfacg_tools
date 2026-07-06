@@ -241,19 +241,12 @@ class Container(ABC):
             ext=ext,
         )
 
-        catalog.save(dir_path / 'catalog.json')
-
         item_list = [{'url': i.url, 'title': i.title} for _, i in all_items]
         task_id = (
             tracker.create_task(self.__class__.__name__.lower(), self.title, self.id, '', chapters=item_list)
             if tracker
             else None
         )
-
-        item_lookup: dict[tuple[int, int], CatalogItem] = {}
-        for sec in catalog.sections:
-            for ci in sec.items:
-                item_lookup[(sec.idx, ci.idx)] = ci
 
         lock = threading.Lock()
         pbar = tqdm(total=len(all_items), desc=self.title, unit='item')
@@ -263,43 +256,30 @@ class Container(ABC):
         with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
             futures = {}
             for section, item in all_items:
-                ci = item_lookup.get((section.idx, item.idx))
-                if ci and ci.file:
-                    save_path = dir_path / ci.file
-                    save_path.parent.mkdir(parents=True, exist_ok=True)
+                safe_section = _sanitize_filename(section.title)
+                section_dir = dir_path / f'sec_{section.idx:03d}_{safe_section}'
+                section_dir.mkdir(exist_ok=True)
+                safe_title = _sanitize_filename(item.title)
+                if safe_title:
+                    filename = f'item_{item.idx:03d}_{safe_title}.{ext}'
                 else:
-                    safe_section = _sanitize_filename(section.title)
-                    section_dir = dir_path / f'sec_{section.idx:03d}_{safe_section}'
-                    section_dir.mkdir(exist_ok=True)
-                    safe_title = _sanitize_filename(item.title)
-                    if safe_title:
-                        filename = f'item_{item.idx:03d}_{safe_title}.{ext}'
-                    else:
-                        filename = f'item_{item.idx:03d}.{ext}'
-                    save_path = section_dir / filename
+                    filename = f'item_{item.idx:03d}.{ext}'
+                save_path = section_dir / filename
 
                 futures[executor.submit(self._download_item, item, save_path, pbar, lock)] = (
                     section,
                     item,
-                    save_path,
                 )
 
             for future in as_completed(futures):
-                section, item, save_path = futures[future]
+                section, item = futures[future]
                 try:
                     future.result()
                     if tracker and task_id:
                         tracker.mark_done(task_id, item.url)
-                    ci = item_lookup.get((section.idx, item.idx))
-                    if ci:
-                        ci.status = 'done'
                 except AntiScrapingError as e:
                     logger.error(f'反爬检测，停止所有下载: {e}')
                     anti_scraping = e
-                    ci = item_lookup.get((section.idx, item.idx))
-                    if ci:
-                        ci.status = 'failed'
-                        ci.error = str(e)
                     if tracker and task_id:
                         tracker.mark_failed(task_id, item.url, str(e))
                     if pbar and lock:
@@ -309,10 +289,6 @@ class Container(ABC):
                     break
                 except Exception as e:
                     logger.error(f'Failed: {item.title} - {e}')
-                    ci = item_lookup.get((section.idx, item.idx))
-                    if ci:
-                        ci.status = 'failed'
-                        ci.error = str(e)
                     if tracker and task_id:
                         tracker.mark_failed(task_id, item.url, str(e))
                     if pbar and lock:
@@ -321,13 +297,10 @@ class Container(ABC):
 
         pbar.close()
 
-        catalog.save(dir_path / 'catalog.json')
-
         if anti_scraping:
-            done_count = sum(1 for s in catalog.sections for ci in s.items if ci.status == 'done')
-            if done_count:
-                logger.warning(f'反爬检测，已下载 {done_count} 项，保存部分结果')
             raise anti_scraping
+
+        catalog.save(dir_path / 'catalog.json')
 
         if ext == 'html':
             (dir_path / 'info.html').write_text(info_html, encoding='utf-8')
