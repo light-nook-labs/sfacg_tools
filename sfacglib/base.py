@@ -45,14 +45,20 @@ class Section(ABC):
 class Container(ABC):
     def __init__(self, fetcher: Fetcher | None = None):
         self.fetcher = fetcher or Fetcher()
-        self.title: str = ''
         self.id: str = ''
+        self.title: str = ''
+        self.author: str = ''
+        self.intro: str = ''
+        self.cover: str = ''
+
+    def get_info(self) -> tuple[str, str]:
+        return '', ''
+
+    def get_sections(self) -> list[Section]:
+        return []
 
     @abstractmethod
-    def get_info(self) -> tuple[str, str]: ...
-
-    @abstractmethod
-    def get_sections(self) -> list[Section]: ...
+    def _download_item(self, item: Item, save_path: Path, pbar=None, lock=None): ...
 
     def _filter_items(
         self,
@@ -192,7 +198,11 @@ class Container(ABC):
                 else:
                     filename = f'{item_prefix}_{item.idx:03d}.{ext}'
                 save_path = section_dir / filename
-                futures[executor.submit(item.download, save_path, pbar, lock)] = (section, item, save_path)
+                futures[executor.submit(self._download_item, item, save_path, pbar, lock)] = (
+                    section,
+                    item,
+                    save_path,
+                )
 
             anti_scraping = None
             for future in as_completed(futures):

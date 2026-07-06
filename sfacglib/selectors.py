@@ -1,18 +1,10 @@
-import sys
 from pathlib import Path
 
+import tomllib
 from bs4 import BeautifulSoup, ResultSet, Tag
 from loguru import logger
 
 from .config import SELECTORS_PATH
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib
-    except ModuleNotFoundError:
-        import tomli as tomllib  # type: ignore[no-redef]
 
 
 class SelectorError(Exception):
