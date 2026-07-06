@@ -49,17 +49,34 @@ def _connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+BATCH_SIZE = 20
+
+
 class ProgressTracker:
     def __init__(self, db_path: str | Path | None = None):
         self.db_path = db_path or DB_PATH
         self.conn = _connect(self.db_path)
         self._lock = threading.Lock()
+        self._dirty = 0
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.flush()
         self.close()
+
+    def _maybe_flush(self):
+        self._dirty += 1
+        if self._dirty >= BATCH_SIZE:
+            self.conn.commit()
+            self._dirty = 0
+
+    def flush(self):
+        with self._lock:
+            if self._dirty:
+                self.conn.commit()
+                self._dirty = 0
 
     def create_task(
         self,
@@ -109,7 +126,7 @@ class ProgressTracker:
                 'UPDATE tasks SET completed=completed+1, updated_at=? WHERE id=?',
                 (now, task_id),
             )
-            self.conn.commit()
+            self._maybe_flush()
 
     def mark_failed(self, task_id: str, chapter_url: str, error: str = ''):
         cid = _extract_id(chapter_url)
@@ -118,7 +135,7 @@ class ProgressTracker:
                 'UPDATE chapters SET status=?, error=? WHERE task_id=? AND cid=?',
                 ('failed', error[:500], task_id, cid),
             )
-            self.conn.commit()
+            self._maybe_flush()
 
     def mark_task_done(self, task_id: str):
         now = datetime.now().isoformat()
@@ -130,6 +147,7 @@ class ProgressTracker:
             self.conn.commit()
 
     def finalize_task(self, task_id: str):
+        self.flush()
         self.mark_task_done(task_id)
         pending = self.get_pending(task_id)
         if not pending:
