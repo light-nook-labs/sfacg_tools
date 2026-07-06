@@ -26,7 +26,7 @@ def _check_gpu_available() -> bool:
         providers = ort.get_available_providers()
         _gpu_available = 'CUDAExecutionProvider' in providers
         if _gpu_available:
-            logger.info(f'GPU available: {providers}')
+            logger.info('GPU available (CUDA provider found)')
         else:
             logger.info(f'GPU not available, providers: {providers}')
     except ImportError:
@@ -50,9 +50,14 @@ def _get_ocr(cpu_num_threads: int = 4):
         try:
             from rapidocr_onnxruntime import RapidOCR
 
-            providers = _get_providers()
-            logger.info(f'Initializing OCR with providers: {providers}')
-            _ocr_instance = RapidOCR(cpu_num_threads=cpu_num_threads, providers=providers)
+            use_gpu = _check_gpu_available()
+            logger.info(f'Initializing OCR (GPU={use_gpu})')
+            _ocr_instance = RapidOCR(
+                cpu_num_threads=cpu_num_threads,
+                rec_use_cuda=use_gpu,
+                cls_use_cuda=use_gpu,
+                det_use_cuda=use_gpu,
+            )
         except ImportError:
             raise ImportError('OCR dependencies not installed. Run: uv sync --extra ocr')
     return _ocr_instance
@@ -189,15 +194,17 @@ def _ocr_line_rec_only(args: tuple[int, Image.Image]) -> tuple[int, str]:
 
 def ocr_gif(gif_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: int = 4) -> str:
     start_time = time.perf_counter()
-    logger.info(f'ocr_gif (fast): {len(gif_bytes)} bytes, workers={workers}')
+    logger.info(f'ocr_gif: {len(gif_bytes)} bytes')
 
     frames = gif_to_frames(gif_bytes)
-    all_results: dict[int, str] = {}
+    all_line_images: list[tuple[int, Image.Image]] = []
+    frame_offsets: list[int] = []
     global_line_id = 0
 
     for frame_idx, frame in enumerate(frames):
         cropped = crop_whitespace(frame)
         if cropped is None:
+            frame_offsets.append(global_line_id)
             continue
 
         gray = np.array(cropped.convert('L'))
@@ -206,29 +213,32 @@ def ocr_gif(gif_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: int =
         gaps = find_line_gaps(gray, min_gap=5)
         lines_bounds = gaps_to_lines_bounds(gaps, h, min_gap=5, min_height=10)
 
-        logger.info(f'ocr_gif (fast): frame {frame_idx}, {w}x{h}, {len(lines_bounds)} lines')
+        logger.info(f'ocr_gif: frame {frame_idx}, {w}x{h}, {len(lines_bounds)} lines')
 
         de_pinyin = _remove_pinyin_from_image(gray, lines_bounds)
         line_images = _extract_line_images(de_pinyin, lines_bounds)
 
-        _get_ocr(cpu_num_threads=cpu_num_threads)
-        if line_images:
-            _, warmup_img = line_images[0]
-            _ocr_line_rec_only((0, warmup_img))
+        for lid, img in line_images:
+            all_line_images.append((global_line_id + lid, img))
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_ocr_line_rec_only, (lid, img)): lid for lid, img in line_images}
-            for future in as_completed(futures):
-                lid, text = future.result()
-                if text:
-                    all_results[global_line_id + lid] = text
-                    logger.info(f'ocr_gif (fast): line {global_line_id + lid} = "{text}"')
-
+        frame_offsets.append(global_line_id)
         global_line_id += len(line_images)
+
+    logger.info(f'ocr_gif: {len(all_line_images)} total lines, processing...')
+
+    _get_ocr(cpu_num_threads=cpu_num_threads)
+
+    all_results: dict[int, str] = {}
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(_ocr_line_rec_only, (lid, img)): lid for lid, img in all_line_images}
+        for future in as_completed(futures):
+            lid, text = future.result()
+            if text:
+                all_results[lid] = text
 
     merged = '\n'.join(all_results[i] for i in sorted(all_results))
     total_elapsed = time.perf_counter() - start_time
-    logger.info(f'ocr_gif (fast): done, {len(merged)} chars, {total_elapsed:.1f}s')
+    logger.info(f'ocr_gif: done, {len(merged)} chars, {total_elapsed:.1f}s')
     return merged
 
 
