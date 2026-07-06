@@ -61,7 +61,7 @@ uv run python main.py convert output/落樱之剑 -f html,epub,pdf
 # VIP GIF 去拼音（快速，0.2s）
 uv run python main.py ocr-preprocess input.gif -o output.png
 
-# VIP GIF OCR（完整，39s）
+# VIP GIF OCR（完整，~5s）
 uv run python main.py ocr input.gif -o output.txt
 
 # OCR 纠错（需配置 .env）
@@ -241,27 +241,28 @@ VIP 章节分两种类型：
 | 方式 | 2014 低配 PC | 现代 PC | 输出 | 适用场景 |
 |------|-------------|---------|------|----------|
 | 仅去拼音 | ~0.2s | ~0.1s | 图像 | 只需阅读 |
-| 本地 OCR | ~39s | ~14s | 文本 | 需要文字版 |
-| OCR + LLM 纠正 | ~66s | ~40s | 纠正文本 | 高质量需求 |
+| 本地 OCR | ~39s | ~5s | 文本 | 需要文字版 |
+| OCR + LLM 纠正 | ~66s | ~30s | 纠正文本 | 高质量需求 |
 
 > [!NOTE]
 > **测试硬件对比：**
 > - **2014 低配 PC**: Dell Latitude 7350（无风扇二合一平板），Intel Core M-5Y71 @ 1.20GHz（2 核 4 线程，睿频 2.9GHz），8GB DDR3
 > - **现代 PC**: Intel Core i7-14700K（20 核 28 线程），32GB DDR5，NVIDIA RTX 5070 Ti
-> - 测试文件：VIP 章节 GIF（348 KB，1909 字）
+> - 测试文件：10 个 VIP 章节 GIF（每个 ~350KB，~1900 字），总计 63.47s（平均 5.0s/个，不含首次加载）
 >
 > GPU 加速对小型图像（单帧 GIF）无明显效果，因为 GPU 数据传输开销大于计算收益。GPU 适合大批量处理或全页 OCR（含检测）场景。
 
 ### GPU 加速
 
-OCR 自动检测 GPU 并启用加速。安装 GPU 支持：
+OCR 自动检测 GPU 并启用加速，无需手动配置。安装 GPU 支持：
 
 ```bash
 uv sync --extra ocr --extra gpu
 ```
 
 > [!NOTE]
-> 需要 NVIDIA GPU + CUDA 11.8+。GPU 加速对当前行切分 OCR 模型提升有限（~1.0x），主要收益来自现代 CPU 的多核性能。
+> 需要 NVIDIA GPU + cuDNN 9.* + CUDA 13.*。安装后重启终端即可自动启用。
+> GPU 加速对当前行切分 OCR 模型提升有限（~1.0x），主要收益来自现代 CPU 的多核性能。
 
 ### 去拼音 API
 
@@ -272,7 +273,7 @@ uv run python main.py ocr-preprocess input.gif -o output.png
 
 ```python
 # Python API
-from sfacglib.ocr_fast import remove_pinyin_gif, remove_pinyin_to_bytes
+from sfacglib.ocr import remove_pinyin_gif, remove_pinyin_to_bytes
 
 gif_bytes = Path('chapter.gif').read_bytes()
 
@@ -285,7 +286,7 @@ png = remove_pinyin_to_bytes(gif_bytes)   # bytes
 以 `common.gif`（728x5755, 137 行）为例：
 
 > [!NOTE]
-> 以下图片为截取的部分区域，时间为处理完整 GIF 的耗时。
+> 以下图片为截取的部分区域，时间为处理完整 GIF 的耗时（现代 PC ~5s）。
 
 **Step 1: GIF → 帧提取**
 
@@ -340,7 +341,7 @@ png = remove_pinyin_to_bytes(gif_bytes)   # bytes
 [14] 埃应的狐妖。 (conf=0.69) ← 错误："联"→"埃"
 ```
 
-**行切分 OCR（rec_only）— 39s, 2225 字**
+**行切分 OCR（rec_only）— 5s, 1909 字**
 
 ![行切分OCR](docs/ocr_workflow/compare_line_ocr_annotated.png)
 
@@ -352,7 +353,7 @@ png = remove_pinyin_to_bytes(gif_bytes)   # bytes
 | 方案 | 时间 | 行数 | 字数 | 主要错误 |
 |------|------|------|------|----------|
 | 整图 OCR | 66s | 63 | 657 | 多处错别字 |
-| 行切分 OCR | 39s | 137 | 2225 | 1 处 |
+| 行切分 OCR | 5s | 137 | 1909 | 1 处 |
 
 > [!TIP]
 > 行切分优势：跳过检测（更快）、逐行识别（无干扰）、已去拼音（避免误识别）。
@@ -405,21 +406,22 @@ print(settings.llm_api_key)
 
 ```
 sfacglib/
-  models.py         # Pydantic 数据模型（SearchItem, Catalog 等）
+  models/           # Pydantic 数据模型（SearchItem, Catalog 等）
   base.py           # 抽象基类：Container, Section, Item + _filter_items
   config.py         # 集中常量 + Pydantic Settings
   fetcher.py        # HTTP 请求（轮换 UA、重试、限速、认证）
   auth.py           # Cookie 管理（GetLoginInfo API 验证）
   selectors.py      # CSS 选择器注册表
-  selectors.json    # CSS 选择器定义
+  selectors.toml    # CSS 选择器定义
   novel.py          # 小说下载器 + NovelChapter/VIP处理
   comic.py          # 漫画下载器
   audio.py          # 有声下载器
   epub.py           # EPUB 生成
   convert.py        # 格式转换（小说/漫画 → HTML/EPUB/PDF）
   search.py         # 搜索 API（关键词、相关推荐、作者作品）
-  ocr_fast.py       # OCR 引擎（RapidOCR、去拼音、rec_only、并行）
-  chatbot.py        # Agent（tool calling、OCR 纠错）
+  ocr/              # OCR 包
+    engine.py       # OCR 引擎（RapidOCR、去拼音、rec_only、并行）
+    chatbot.py      # Agent（tool calling、OCR 纠错）
   nlp.py            # NLP 后处理（合并断行）
   progress.py       # 进度追踪（SQLite）
   utils.py          # 共享工具
