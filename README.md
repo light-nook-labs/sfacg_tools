@@ -370,7 +370,7 @@ uv run python main.py ocr-fix ./ocr_output/ --pattern "*.txt" -c "玄幻小说"
 
 ## CSS 选择器
 
-所有选择器位于 `sfacglib/selectors.json`。失效时更新 JSON 即可，无需改代码。
+所有选择器位于 `sfacglib/selectors.toml`。失效时更新 TOML 即可，无需改代码。
 
 ## Pydantic 模型
 
