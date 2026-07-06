@@ -11,11 +11,14 @@ Usage:
     uv run python main.py cleanup
     uv run python main.py app
 """
-import sys
-import re
+
 import argparse
+import re
+import sys
 from pathlib import Path
+
 from loguru import logger
+
 from sfacglib.fetcher import Fetcher
 from sfacglib.progress import ProgressTracker
 from sfacglib.utils import sanitize_filename
@@ -29,6 +32,7 @@ def _get_fetcher() -> Fetcher:
 
 def cmd_novel(args):
     from sfacglib.novel import Novel
+
     f = _get_fetcher()
     tracker = ProgressTracker()
     novel = Novel(args.nid, fetcher=f)
@@ -48,6 +52,7 @@ def cmd_novel(args):
 
 def cmd_chapter(args):
     from sfacglib.novel import NovelChapter
+
     f = _get_fetcher()
     ch = NovelChapter(url=args.url, fetcher=f)
     md, html = ch.get_chapter_content()
@@ -61,6 +66,7 @@ def cmd_chapter(args):
 
 def cmd_comic(args):
     from sfacglib.comic import Comic
+
     f = _get_fetcher()
     tracker = ProgressTracker()
     comic = Comic(args.url, fetcher=f)
@@ -79,6 +85,7 @@ def cmd_comic(args):
 
 def cmd_convert(args):
     from sfacglib.convert import convert_comic
+
     f = _get_fetcher()
     formats = args.formats.split(',') if args.formats else ['html', 'epub', 'pdf']
     convert_comic(args.dir, formats=formats, fetcher=f, padding=args.padding)
@@ -86,6 +93,7 @@ def cmd_convert(args):
 
 def cmd_audio(args):
     from sfacglib.audio import Audio
+
     f = _get_fetcher()
     tracker = ProgressTracker()
     audio = Audio(args.id, fetcher=f)
@@ -103,6 +111,7 @@ def cmd_audio(args):
 
 def cmd_review(args):
     from sfacglib.novel import Novel
+
     f = _get_fetcher()
     nid_match = re.search(r'(\d+)', args.url)
     if not nid_match:
@@ -119,6 +128,7 @@ def cmd_review(args):
 
 def cmd_audiolist(args):
     from sfacglib.audio import Audio
+
     f = _get_fetcher()
     result = Audio.scan(start=args.start, end=args.end, fetcher=f)
     logger.bind(force=True).info(f'Found {len(result)} audiobooks')
@@ -146,21 +156,25 @@ def cmd_cleanup(args):
 
 def cmd_app(args):
     from sfacglib.ui import run_pc
+
     run_pc()
 
 
 def cmd_mobile(args):
     from sfacglib.ui import run_mobile
+
     run_mobile(target=args.target)
 
 
 def cmd_web(args):
     from sfacglib.ui import run_web
+
     run_web(host=args.host, port=args.port)
 
 
 def cmd_search(args):
-    from sfacglib.search import search, search_novel_api, get_related, get_author_works
+    from sfacglib.search import get_author_works, get_related, search, search_novel_api
+
     if args.related:
         results = get_related(args.keyword)
     elif args.author_works:
@@ -186,6 +200,7 @@ def cmd_search(args):
 
 def cmd_ocr(args):
     from sfacglib.ocr_fast import ocr_image
+
     text = ocr_image(args.source, workers=args.workers)
     if args.output:
         out = Path(args.output)
@@ -198,6 +213,7 @@ def cmd_ocr(args):
 
 def cmd_ocr_preprocess(args):
     from sfacglib.ocr_fast import remove_pinyin_gif
+
     source = Path(args.source)
     if not source.exists():
         logger.error(f'Not found: {source}')
@@ -212,11 +228,13 @@ def cmd_ocr_preprocess(args):
 
 def cmd_chat(args):
     from sfacglib.chatbot import interactive_chat
+
     interactive_chat()
 
 
 def cmd_ocr_fix(args):
     from sfacglib.chatbot import ChatBot
+
     bot = ChatBot()
     target = Path(args.target)
     if target.is_file():
@@ -253,7 +271,9 @@ def main():
     p_comic = sub.add_parser('comic', help='Download comic')
     p_comic.add_argument('url', help='Comic URL')
     p_comic.add_argument('--format', '-f', default='dir', choices=['dir', 'html', 'epub', 'pdf'], help='Output format')
-    p_comic.add_argument('--url-mode', action='store_true', help='Use URL instead of local images (HTML only, URLs may expire)')
+    p_comic.add_argument(
+        '--url-mode', action='store_true', help='Use URL instead of local images (HTML only, URLs may expire)'
+    )
     p_comic.add_argument('--output', '-o', default='./')
     p_comic.add_argument('--start-chapter', '-sc', help='Start from this chapter (title or ID)')
     p_comic.add_argument('--end-chapter', '-ec', help='End at this chapter (title or ID)')

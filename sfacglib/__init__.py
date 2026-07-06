@@ -1,71 +1,147 @@
-from tqdm import tqdm as _tqdm
 from loguru import logger as _logger
+from tqdm import tqdm as _tqdm
 
 _logger.remove()
 
+
 def _tqdm_sink(message):
     record = message.record
-    if record['level'].no >= 30:
+    if record['level'].no >= 30 or record['extra'].get('force'):
         _tqdm.write(message, end='')
-    elif record['extra'].get('force'):
-        _tqdm.write(message, end='')
+
 
 _logger.add(_tqdm_sink, format='{time:HH:mm:ss} | {level: <8} | {message}')
 
-from .config import (
-    MOBILE_BASE, PC_BASE, COMIC_BASE, COMIC_READER_BASE, PASSPORT_BASE,
-    API_HTML5, API_COMIC_PICS, API_VIP_IMAGE, API_COMIC_VIP,
-    URL_NOVEL_INDEX, URL_NOVEL_MENU, URL_REVIEW_LIST, URL_REVIEW_DETAIL,
-    URL_AUDIO, SELECTORS_PATH, COOKIE_PATH, AUDIOBOOKS_JSON,
-    DEFAULT_DELAY, MAX_RETRIES, TIMEOUT,
-    WORKERS_CHAPTER, WORKERS_IMAGE, WORKERS_AUDIO_CHAPTER,
-    WORKERS_AUDIO_VOLUME, WORKERS_EPUB_IMG,
-    VIP_IMAGE_WIDTH, OCR_STRIP_HEIGHT, OCR_WORKERS, OCR_BRIGHTNESS_THRESHOLD,
-    VipMode, Settings, settings,
-)
-from .models import SearchItem, CatalogItem, CatalogSection, Catalog
-from .fetcher import Fetcher
-from .auth import Auth
-from .selectors import Selectors, SelectorError
-from .base import Container, Section, Item
-from .novel import Novel, NovelChapter, process_vip_chapter
-from .comic import Comic, ComicChapter
 from .audio import Audio, AudioChapter, AudioVolume
-from .epub import download_epub, convert_html_to_epub, convert_md_to_epub
-from .progress import ProgressTracker
-from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks, validate_gif
-from .ocr_fast import (
-    ocr_image, ocr_bytes, ocr_gif,
-    prepare_lines_as_images, image_to_bytes,
-    ocr_gif_with_llm, ocr_image_with_llm,
-    remove_pinyin, remove_pinyin_gif, remove_pinyin_to_bytes,
-)
-from .llm_vision import LLMVision, LLMProvider, create_llm_vision
-from .web_llm_vision import DeepSeekWebOCR, split_by_height, resize_to_max, deduplicate_texts, create_web_llm_vision
+from .auth import Auth
+from .base import Container, Item, Section
 from .chatbot import ChatBot, interactive_chat
-from .search import search, search_novel, search_comic, search_api, search_novel_api, search_comic_api, get_related, get_author_works
+from .comic import Comic, ComicChapter
+from .config import (
+    API_COMIC_PICS,
+    API_COMIC_VIP,
+    API_HTML5,
+    API_VIP_IMAGE,
+    AUDIOBOOKS_JSON,
+    COMIC_BASE,
+    COMIC_READER_BASE,
+    COOKIE_PATH,
+    DEFAULT_DELAY,
+    MAX_RETRIES,
+    MOBILE_BASE,
+    OCR_BRIGHTNESS_THRESHOLD,
+    OCR_STRIP_HEIGHT,
+    OCR_WORKERS,
+    PASSPORT_BASE,
+    PC_BASE,
+    SELECTORS_PATH,
+    TIMEOUT,
+    URL_AUDIO,
+    URL_NOVEL_INDEX,
+    URL_NOVEL_MENU,
+    URL_REVIEW_DETAIL,
+    URL_REVIEW_LIST,
+    VIP_IMAGE_WIDTH,
+    WORKERS_AUDIO_CHAPTER,
+    WORKERS_AUDIO_VOLUME,
+    WORKERS_CHAPTER,
+    WORKERS_EPUB_IMG,
+    WORKERS_IMAGE,
+    Settings,
+    VipMode,
+    settings,
+)
+from .epub import convert_html_to_epub, convert_md_to_epub, download_epub
+from .fetcher import Fetcher
+from .llm_vision import LLMProvider, LLMVision, create_llm_vision
+from .models import Catalog, CatalogItem, CatalogSection, SearchItem
+from .novel import Novel, NovelChapter, process_vip_chapter
+from .ocr_fast import (
+    image_to_bytes,
+    ocr_bytes,
+    ocr_gif,
+    ocr_gif_with_llm,
+    ocr_image,
+    ocr_image_with_llm,
+    prepare_lines_as_images,
+    remove_pinyin,
+    remove_pinyin_gif,
+    remove_pinyin_to_bytes,
+)
+from .progress import ProgressTracker
+from .search import (
+    get_author_works,
+    get_related,
+    search,
+    search_comic,
+    search_comic_api,
+    search_novel,
+    search_novel_api,
+)
+from .selectors import SelectorError, Selectors
+from .utils import mobile_url, parse_volume_ul, run_tasks, sanitize_filename, validate_gif
+from .web_llm_vision import DeepSeekWebOCR, create_web_llm_vision, deduplicate_texts, resize_to_max, split_by_height
 
 __all__ = [
-    'Fetcher', 'Auth',
-    'Selectors', 'SelectorError',
-    'NovelChapter',
-    'Container', 'Section', 'Item',
+    'OCR_BRIGHTNESS_THRESHOLD',
+    'OCR_STRIP_HEIGHT',
+    'OCR_WORKERS',
+    'VIP_IMAGE_WIDTH',
+    'Audio',
+    'AudioChapter',
+    'AudioVolume',
+    'Auth',
+    'Catalog',
+    'CatalogItem',
+    'CatalogSection',
+    'ChatBot',
+    'Comic',
+    'ComicChapter',
+    'Container',
+    'DeepSeekWebOCR',
+    'Fetcher',
+    'Item',
+    'LLMProvider',
+    'LLMVision',
     'Novel',
-    'Comic', 'ComicChapter',
-    'Audio', 'AudioChapter', 'AudioVolume',
-    'download_epub', 'convert_html_to_epub', 'convert_md_to_epub',
+    'NovelChapter',
     'ProgressTracker',
-    'sanitize_filename', 'mobile_url', 'parse_volume_ul', 'run_tasks', 'validate_gif',
-    'VipMode', 'process_vip_chapter',
-    'ocr_image', 'ocr_bytes', 'ocr_gif',
-    'prepare_lines_as_images', 'image_to_bytes',
-    'ocr_gif_with_llm', 'ocr_image_with_llm',
-    'remove_pinyin', 'remove_pinyin_gif', 'remove_pinyin_to_bytes',
-    'LLMVision', 'LLMProvider', 'create_llm_vision',
-    'DeepSeekWebOCR', 'split_by_height', 'resize_to_max', 'deduplicate_texts',
-    'ChatBot', 'interactive_chat',
-    'search', 'search_novel', 'search_comic', 'search_api', 'search_novel_api', 'search_comic_api', 'get_related', 'get_author_works', 
-    'SearchItem', 'CatalogItem', 'CatalogSection', 'Catalog',
-    'Settings', 'settings',
-    'VIP_IMAGE_WIDTH', 'OCR_STRIP_HEIGHT', 'OCR_WORKERS', 'OCR_BRIGHTNESS_THRESHOLD',
+    'SearchItem',
+    'Section',
+    'SelectorError',
+    'Selectors',
+    'Settings',
+    'VipMode',
+    'convert_html_to_epub',
+    'convert_md_to_epub',
+    'create_llm_vision',
+    'deduplicate_texts',
+    'download_epub',
+    'get_author_works',
+    'get_related',
+    'image_to_bytes',
+    'interactive_chat',
+    'mobile_url',
+    'ocr_bytes',
+    'ocr_gif',
+    'ocr_gif_with_llm',
+    'ocr_image',
+    'ocr_image_with_llm',
+    'parse_volume_ul',
+    'prepare_lines_as_images',
+    'process_vip_chapter',
+    'remove_pinyin',
+    'remove_pinyin_gif',
+    'remove_pinyin_to_bytes',
+    'resize_to_max',
+    'run_tasks',
+    'sanitize_filename',
+    'search',
+    'search_comic',
+    'search_comic_api',
+    'search_novel',
+    'search_novel_api',
+    'settings',
+    'split_by_height',
+    'validate_gif',
 ]

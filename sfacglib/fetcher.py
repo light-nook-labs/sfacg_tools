@@ -1,14 +1,14 @@
+import random
+from threading import Lock
+from time import sleep, time
+from urllib.parse import urlparse
+
 import requests
+from loguru import logger
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from loguru import logger
-from time import sleep, time
-from threading import Lock
-from pathlib import Path
-from urllib.parse import urlparse
-import random
 
-from .config import DEFAULT_DELAY, MAX_RETRIES, TIMEOUT, COOKIE_DOMAIN, USER_AGENTS
+from .config import COOKIE_DOMAIN, DEFAULT_DELAY, MAX_RETRIES, TIMEOUT, USER_AGENTS
 
 
 class RateLimiter:
@@ -45,7 +45,18 @@ class Fetcher:
         html = fetcher.get_html('https://m.sfacg.com/b/43708/')
         fetcher.auto_auth()  # load saved cookies
         fetcher.import_cookies('name=val; ...')  # import from browser
+
+        # For unauthenticated requests (search, public pages):
+        fetcher = Fetcher(no_auth=True)
     """
+
+    AJAX_HEADERS = {
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+    }
 
     def __init__(
         self,
@@ -53,6 +64,7 @@ class Fetcher:
         max_retries: int = MAX_RETRIES,
         timeout: tuple[int, int] | None = None,
         rotate_ua: bool = True,
+        no_auth: bool = False,
     ):
         self.timeout = timeout or TIMEOUT
         self.rotate_ua = rotate_ua
@@ -70,6 +82,11 @@ class Fetcher:
         adapter = HTTPAdapter(max_retries=retry_strategy)
         self.session.mount('https://', adapter)
         self.session.mount('http://', adapter)
+
+    @classmethod
+    def no_auth(cls, **kwargs) -> 'Fetcher':
+        """Create a Fetcher without loading saved cookies (for search, public pages)."""
+        return cls(no_auth=True, **kwargs)
 
     def auto_auth(self) -> bool:
         """Load saved cookies and validate session."""
@@ -89,6 +106,7 @@ class Fetcher:
         """Import cookies from browser cookie string."""
         if not self.auth:
             from .auth import Auth
+
             self.auth = Auth()
 
         if self.auth.import_cookies(cookie_string):

@@ -34,4 +34,43 @@ sfacg = "main:main"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pre-commit>=4.0.0",
+    "ruff>=0.9.0",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "SIM108", # use ternary operator
+    "RUF001", # ambiguous unicode chars (intentional Chinese punctuation)
+    "RUF002", # ambiguous unicode in docstrings
+    "RUF003", # ambiguous unicode in comments
+    "RUF012", # mutable class attribute (not harmful in tests/data classes)
+    "SIM105", # contextlib.suppress vs try-except-pass
+]
+
+[tool.ruff.lint.per-file-ignores]
+"sfacglib/__init__.py" = ["E402", "F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sfacglib"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+docstring-code-format = true
