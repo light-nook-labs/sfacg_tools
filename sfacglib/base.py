@@ -41,6 +41,54 @@ class Section(ABC):
     def to_dict(self) -> dict:
         return {'idx': self.idx, 'title': self.title}
 
+    def download(
+        self,
+        dir_path: Path,
+        ext: str,
+        item_prefix: str = 'item',
+        pbar=None,
+        lock=None,
+    ) -> 'CatalogSection':
+        section_dir = dir_path / f'sec_{self.idx:03d}_{_sanitize_filename(self.title)}'
+        section_dir.mkdir(parents=True, exist_ok=True)
+
+        with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
+            futures: dict = {}
+            for item in self.get_items():
+                safe_title = _sanitize_filename(item.title)
+                if safe_title:
+                    filename = f'{item_prefix}_{item.idx:03d}_{safe_title}.{ext}'
+                else:
+                    filename = f'{item_prefix}_{item.idx:03d}.{ext}'
+                save_path = section_dir / filename
+                futures[executor.submit(item.download, save_path, pbar, lock)] = (item, save_path)
+
+            catalog_items: list[CatalogItem] = []
+            for future in as_completed(futures):
+                item, save_path = futures[future]
+                try:
+                    future.result()
+                    catalog_items.append(
+                        CatalogItem(
+                            idx=item.idx,
+                            title=item.title,
+                            url=item.url,
+                            file=str(save_path.relative_to(dir_path)),
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f'Failed: {item.title} - {e}')
+                    if pbar and lock:
+                        with lock:
+                            pbar.update(1)
+
+        return CatalogSection(
+            idx=self.idx,
+            title=self.title,
+            dir=section_dir.name,
+            items=catalog_items,
+        )
+
 
 class Container(ABC):
     def __init__(self, fetcher: Fetcher | None = None):
@@ -268,12 +316,13 @@ class Container(ABC):
 
         info_md, info_html = self.get_info()
         sections = self.get_sections()
-        all_items = self._filter_items(sections, start, end, range_str, filter_str)
+        filtered_sections = self._filter_sections(sections, start, end, range_str, filter_str)
 
-        if not all_items:
+        if not filtered_sections:
             logger.error('没有可下载的内容')
             return
 
+        all_items = self._filter_items(sections, start, end, range_str, filter_str)
         logger.bind(force=True).info(f'共 {len(all_items)} 项待下载')
 
         item_list = [{'url': i.url, 'title': i.title} for _, i in all_items]
@@ -297,15 +346,15 @@ class Container(ABC):
             intro=self.intro,
         )
 
-        catalog.sections = self._download_items(
-            all_items,
-            dir_path,
-            ext,
-            pbar=pbar,
-            lock=lock,
-            tracker=tracker,
-            task_id=task_id,
-        )
+        catalog.sections = []
+        for section in filtered_sections:
+            catalog_section = section.download(
+                dir_path,
+                ext,
+                pbar=pbar,
+                lock=lock,
+            )
+            catalog.sections.append(catalog_section)
 
         pbar.close()
 
