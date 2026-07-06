@@ -16,10 +16,14 @@ PASSPORT_BASE = 'https://passport.sfacg.com'
 SEARCH_BASE = 'https://s.sfacg.com'
 COVER_BASE = 'https://rs.sfacg.com/web/novel/images/NovelCover/Big'
 
+LOLOBUN_BASE = 'https://www.lolobun.com'
+LOLOBUN_COVER = 'https://osrs.sfacg.com'
+
 API_HTML5 = f'{MOBILE_BASE}/API/HTML5.ashx'
 API_COMIC_PICS = f'{COMIC_BASE}/ajax/Common.ashx'
 API_VIP_IMAGE = f'{PC_BASE}/ajax/ashx/common.ashx'
 API_COMIC_VIP = f'{COMIC_READER_BASE}/ajax/Common.ashx'
+API_LOLOBUN = f'{LOLOBUN_BASE}/ajax/Common.ashx'
 
 VIP_IMAGE_WIDTH: int = 5000
 VIP_DELAY_RANGE: tuple[float, float] = (2.0, 5.0)

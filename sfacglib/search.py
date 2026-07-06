@@ -3,7 +3,17 @@ from time import time
 from bs4 import BeautifulSoup
 from loguru import logger
 
-from .config import API_COMIC_PICS, API_HTML5, COMIC_BASE, COVER_BASE, PC_BASE, SEARCH_BASE
+from .config import (
+    API_COMIC_PICS,
+    API_HTML5,
+    API_LOLOBUN,
+    COMIC_BASE,
+    COVER_BASE,
+    LOLOBUN_BASE,
+    LOLOBUN_COVER,
+    PC_BASE,
+    SEARCH_BASE,
+)
 from .fetcher import Fetcher
 from .models import SearchItem
 from .utils import fix_url_protocol
@@ -264,3 +274,57 @@ def get_author_works(novel_id: str, fetcher: Fetcher | None = None) -> list[Sear
     unique = _deduplicate(results)
     logger.info(f'Found {len(unique)} author works for {novel_id}')
     return unique
+
+
+def search_lolobun(
+    keyword: str,
+    search_type: str = 'novel',
+    page: int = 0,
+    fetcher: Fetcher | None = None,
+) -> list[SearchItem]:
+    fetcher = fetcher or Fetcher.no_auth()
+    logger.info(f'LoLoBun search {search_type}: {keyword}')
+    resp = fetcher.get(
+        API_LOLOBUN,
+        params={'op': 'searchWorks', 'q': keyword, 'type': search_type, 'pi': page, '_': int(time() * 1000)},
+        headers={**Fetcher.AJAX_HEADERS, 'Referer': f'{LOLOBUN_BASE}/search/result?q={keyword}'},
+    )
+    data = resp.json().get('data', {})
+    items = data.get('Items', [])
+    results = []
+    for item in items:
+        entity_id = str(item.get('EntityId', ''))
+        url = item.get('Url', '')
+        full_url = f'{LOLOBUN_BASE}{url}' if url.startswith('/') else url
+        cover = item.get('Cover', '')
+        if cover and not cover.startswith('http'):
+            entity_type = item.get('EntityType', 'Novel')
+            cover_base = (
+                f'{LOLOBUN_COVER}/web/novel/images/NovelCover/Big'
+                if entity_type == 'Novel'
+                else f'{LOLOBUN_COVER}/web/comic/images/Logo'
+            )
+            cover = f'{cover_base}/{cover}'
+        results.append(
+            SearchItem(
+                id=entity_id,
+                title=item.get('Title', ''),
+                author=item.get('AuthorName', ''),
+                cover=cover,
+                url=full_url,
+                snippet=item.get('Intro', '')[:200],
+                updated='',
+                type=search_type,
+                score=float(item.get('Weight', 0)),
+            )
+        )
+    logger.info(f'LoLoBun found {len(results)} {search_type}s for "{keyword}"')
+    return results
+
+
+def search_lolobun_novel(keyword: str, fetcher: Fetcher | None = None) -> list[SearchItem]:
+    return search_lolobun(keyword, search_type='novel', fetcher=fetcher)
+
+
+def search_lolobun_comic(keyword: str, fetcher: Fetcher | None = None) -> list[SearchItem]:
+    return search_lolobun(keyword, search_type='comic', fetcher=fetcher)
