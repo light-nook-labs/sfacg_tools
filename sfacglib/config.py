@@ -20,6 +20,7 @@ LOLOBUN_BASE = 'https://www.lolobun.com'
 LOLOBUN_COVER = 'https://osrs.sfacg.com'
 
 API_HTML5 = f'{MOBILE_BASE}/API/HTML5.ashx'
+API_BOOK = f'{MOBILE_BASE}/API/Book.ashx'
 API_COMIC_PICS = f'{COMIC_BASE}/ajax/Common.ashx'
 API_VIP_IMAGE = f'{PC_BASE}/ajax/ashx/common.ashx'
 API_COMIC_VIP = f'{COMIC_READER_BASE}/ajax/Common.ashx'

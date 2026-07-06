@@ -1,9 +1,11 @@
+import re
 from time import time
 
 from bs4 import BeautifulSoup
 from loguru import logger
 
 from .config import (
+    API_BOOK,
     API_COMIC_PICS,
     API_HTML5,
     API_LOLOBUN,
@@ -11,12 +13,15 @@ from .config import (
     COVER_BASE,
     LOLOBUN_BASE,
     LOLOBUN_COVER,
+    MOBILE_BASE,
     PC_BASE,
     SEARCH_BASE,
 )
 from .fetcher import Fetcher
 from .models import SearchItem
 from .utils import fix_url_protocol
+
+_NOVEL_ID_PATTERN = re.compile(r'/(\d+)')
 
 
 def _deduplicate(results: list[SearchItem]) -> list[SearchItem]:
@@ -328,3 +333,112 @@ def search_lolobun_novel(keyword: str, fetcher: Fetcher | None = None) -> list[S
 
 def search_lolobun_comic(keyword: str, fetcher: Fetcher | None = None) -> list[SearchItem]:
     return search_lolobun(keyword, search_type='comic', fetcher=fetcher)
+
+
+def predictive_novel(keyword: str, fetcher: Fetcher | None = None) -> list[str]:
+    fetcher = fetcher or Fetcher.no_auth()
+    logger.info(f'Predictive novel search: {keyword}')
+    headers = {
+        **Fetcher.AJAX_HEADERS,
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Origin': MOBILE_BASE,
+        'Referer': f'{MOBILE_BASE}/search.html',
+    }
+    resp = fetcher.post(
+        API_BOOK,
+        params={'op': 'searchreffer'},
+        data={'keyword': keyword},
+        headers=headers,
+    )
+    results = resp.json().get('keywords', [])
+    logger.info(f'Predictive novel found {len(results)} suggestions for "{keyword}"')
+    return results
+
+
+def predictive_comic(keyword: str, fetcher: Fetcher | None = None) -> list[str]:
+    fetcher = fetcher or Fetcher.no_auth()
+    logger.info(f'Predictive comic search: {keyword}')
+    headers = {
+        **Fetcher.AJAX_HEADERS,
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Origin': MOBILE_BASE,
+        'Referer': f'{MOBILE_BASE}/search.html',
+    }
+    resp = fetcher.post(
+        API_COMIC_PICS,
+        params={'op': 'getSearchReffer'},
+        data={'keyword': keyword},
+        headers=headers,
+    )
+    results = resp.json().get('keywords', [])
+    logger.info(f'Predictive comic found {len(results)} suggestions for "{keyword}"')
+    return results
+
+
+class NovelItem:
+    def __init__(self, nid: int, fetcher: Fetcher | None = None):
+        self._id = nid
+        self._fetcher = fetcher or Fetcher.no_auth()
+        self._author: str | None = None
+        self._same_author_works: list[SearchItem] | None = None
+
+    def __repr__(self):
+        s = f'<NovelItem(id={self._id}) '
+        if self._author is None or self._same_author_works is None:
+            s += 'Has not fetched data!'
+        else:
+            s += f'Author: {self._author}, Works num: {len(self._same_author_works)}'
+        s += '>'
+        return s
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    @property
+    def author(self) -> str | None:
+        return self._author
+
+    @property
+    def same_author_works(self) -> list[SearchItem] | None:
+        return self._same_author_works
+
+    def fetch_data(self) -> None:
+        url = f'{MOBILE_BASE}/b/{self._id}/'
+        headers = {**Fetcher.AJAX_HEADERS, 'Referer': f'{MOBILE_BASE}/b/{self._id}/'}
+        try:
+            resp = self._fetcher.get(url, headers=headers)
+            resp.raise_for_status()
+        except Exception:
+            logger.warning(f'Failed to fetch novel detail for {self._id}')
+            self._author = ''
+            self._same_author_works = []
+            return
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        author_sec = soup.select_one('.book_Author')
+        if author_sec is None:
+            self._author = ''
+            self._same_author_works = []
+            return
+
+        author_tag = author_sec.find('li')
+        self._author = author_tag.get_text(strip=True) if author_tag else ''
+
+        novels_div = author_sec.find('div')
+        self._same_author_works = []
+        if novels_div:
+            for a_tag in novels_div.find_all('a'):
+                title = a_tag.get_text(strip=True)
+                href = a_tag.get('href', '')
+                match = _NOVEL_ID_PATTERN.search(href)
+                if match:
+                    self._same_author_works.append(
+                        SearchItem(
+                            id=match.group(1),
+                            title=title,
+                            author=self._author or '',
+                            url=f'{MOBILE_BASE}/b/{match.group(1)}/',
+                            type='novel',
+                        )
+                    )

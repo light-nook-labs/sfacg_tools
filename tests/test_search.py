@@ -3,9 +3,12 @@ from unittest.mock import MagicMock
 from sfacglib.fetcher import Fetcher
 from sfacglib.models import SearchItem
 from sfacglib.search import (
+    NovelItem,
     _deduplicate,
     _parse_html_results,
     _parse_info_text,
+    predictive_comic,
+    predictive_novel,
     search_comic_api,
     search_lolobun,
     search_lolobun_comic,
@@ -366,3 +369,88 @@ class TestSearchItemModel:
         data = item.model_dump()
         assert data['id'] == '1'
         assert 'title' in data
+
+
+class TestPredictiveNovel:
+    MOCK_DATA = {'keywords': ['test novel', 'test story', 'testing']}
+
+    def test_returns_keyword_list(self, monkeypatch):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = self.MOCK_DATA
+        monkeypatch.setattr(Fetcher, 'post', lambda self, url, **kw: mock_resp)
+        results = predictive_novel('test')
+        assert results == ['test novel', 'test story', 'testing']
+
+    def test_empty_response(self, monkeypatch):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {}
+        monkeypatch.setattr(Fetcher, 'post', lambda self, url, **kw: mock_resp)
+        results = predictive_novel('xyz')
+        assert results == []
+
+
+class TestPredictiveComic:
+    MOCK_DATA = {'keywords': ['dragon comic', 'dragon ball']}
+
+    def test_returns_keyword_list(self, monkeypatch):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = self.MOCK_DATA
+        monkeypatch.setattr(Fetcher, 'post', lambda self, url, **kw: mock_resp)
+        results = predictive_comic('dragon')
+        assert results == ['dragon comic', 'dragon ball']
+
+    def test_empty_response(self, monkeypatch):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {}
+        monkeypatch.setattr(Fetcher, 'post', lambda self, url, **kw: mock_resp)
+        results = predictive_comic('xyz')
+        assert results == []
+
+
+class TestNovelItem:
+    MOCK_HTML = """
+    <html><body>
+    <div class="book_Author">
+        <li>Test Author</li>
+        <div>
+            <a href="/b/12345/">Same Author Novel 1</a>
+            <a href="/b/67890/">Same Author Novel 2</a>
+        </div>
+    </div>
+    </body></html>
+    """
+
+    def test_fetch_data_parses_author(self, monkeypatch):
+        mock_resp = MagicMock()
+        mock_resp.text = self.MOCK_HTML
+        mock_resp.raise_for_status = MagicMock()
+        monkeypatch.setattr(Fetcher, 'get', lambda self, url, **kw: mock_resp)
+        item = NovelItem(111)
+        item.fetch_data()
+        assert item.author == 'Test Author'
+        assert len(item.same_author_works) == 2
+        assert item.same_author_works[0].id == '12345'
+        assert item.same_author_works[1].id == '67890'
+
+    def test_fetch_data_no_author_section(self, monkeypatch):
+        mock_resp = MagicMock()
+        mock_resp.text = '<html><body></body></html>'
+        mock_resp.raise_for_status = MagicMock()
+        monkeypatch.setattr(Fetcher, 'get', lambda self, url, **kw: mock_resp)
+        item = NovelItem(222)
+        item.fetch_data()
+        assert item.author == ''
+        assert item.same_author_works == []
+
+    def test_repr_before_fetch(self):
+        item = NovelItem(333)
+        assert 'Has not fetched data' in repr(item)
+
+    def test_repr_after_fetch(self, monkeypatch):
+        mock_resp = MagicMock()
+        mock_resp.text = self.MOCK_HTML
+        mock_resp.raise_for_status = MagicMock()
+        monkeypatch.setattr(Fetcher, 'get', lambda self, url, **kw: mock_resp)
+        item = NovelItem(444)
+        item.fetch_data()
+        assert 'Test Author' in repr(item)

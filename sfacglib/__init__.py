@@ -18,6 +18,7 @@ from .base import Container, Item, Section
 from .chatbot import ChatBot, interactive_chat
 from .comic import Comic, ComicChapter
 from .config import (
+    API_BOOK,
     API_COMIC_PICS,
     API_COMIC_VIP,
     API_HTML5,
@@ -70,8 +71,11 @@ from .ocr_fast import (
 )
 from .progress import ProgressTracker
 from .search import (
+    NovelItem,
     get_author_works,
     get_related,
+    predictive_comic,
+    predictive_novel,
     search,
     search_comic,
     search_comic_api,
@@ -86,6 +90,7 @@ from .utils import mobile_url, parse_volume_ul, run_tasks, sanitize_filename, va
 from .web_llm_vision import DeepSeekWebOCR, create_web_llm_vision, deduplicate_texts, resize_to_max, split_by_height
 
 __all__ = [
+    'API_BOOK',
     'OCR_BRIGHTNESS_THRESHOLD',
     'OCR_STRIP_HEIGHT',
     'OCR_WORKERS',
@@ -108,6 +113,7 @@ __all__ = [
     'LLMVision',
     'Novel',
     'NovelChapter',
+    'NovelItem',
     'ProgressTracker',
     'SearchItem',
     'Section',
@@ -131,6 +137,8 @@ __all__ = [
     'ocr_image',
     'ocr_image_with_llm',
     'parse_volume_ul',
+    'predictive_comic',
+    'predictive_novel',
     'prepare_lines_as_images',
     'process_vip_chapter',
     'remove_pinyin',
