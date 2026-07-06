@@ -1,5 +1,6 @@
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from time import time
 
@@ -8,7 +9,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from .base import Container, Item, Section, _sanitize_filename
-from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_BASE, COMIC_READER_BASE
+from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_BASE, COMIC_READER_BASE, WORKERS_CHAPTER
 from .convert import convert_to_epub, convert_to_pdf
 from .fetcher import Fetcher
 from .models import Catalog, CatalogItem, CatalogSection
@@ -367,9 +368,56 @@ class Comic(Container):
         lock = threading.Lock()
         pbar = tqdm(total=len(all_items), desc=self.title, unit='page')
 
-        catalog.sections = self._download_items(all_items, dir_path, 'jpg', 'ch', 'page', pbar, lock, tracker, task_id)
+        section_map: dict[int, CatalogSection] = {}
+        with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
+            futures = {}
+            for section, item in all_items:
+                safe_section = _sanitize_filename(section.title)
+                section_dir = dir_path / f'ch_{section.idx:03d}_{safe_section}'
+                section_dir.mkdir(exist_ok=True)
+                safe_title = _sanitize_filename(item.title)
+                if safe_title:
+                    filename = f'page_{item.idx:03d}_{safe_title}.jpg'
+                else:
+                    filename = f'page_{item.idx:03d}.jpg'
+                save_path = section_dir / filename
+                futures[executor.submit(item.download, save_path, pbar, lock)] = (
+                    section,
+                    item,
+                    save_path,
+                )
+
+            for future in as_completed(futures):
+                section, item, save_path = futures[future]
+                try:
+                    future.result()
+                    if tracker and task_id:
+                        tracker.mark_done(task_id, item.url)
+                    if section.idx not in section_map:
+                        section_map[section.idx] = CatalogSection(
+                            idx=section.idx,
+                            title=section.title,
+                            dir=save_path.parent.name,
+                            items=[],
+                        )
+                    section_map[section.idx].items.append(
+                        CatalogItem(
+                            idx=item.idx,
+                            title=item.title,
+                            url=item.url,
+                            file=str(save_path.relative_to(dir_path)),
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f'Failed: {item.title} - {e}')
+                    if tracker and task_id:
+                        tracker.mark_failed(task_id, item.url, str(e))
+                    if pbar and lock:
+                        with lock:
+                            pbar.update(1)
 
         pbar.close()
+        catalog.sections = sorted(section_map.values(), key=lambda s: s.idx)
 
         catalog.save(dir_path / 'catalog.json')
         (dir_path / 'info.md').write_text(info_md, encoding='utf-8')
@@ -416,7 +464,28 @@ class Comic(Container):
             if all_items:
                 lock = threading.Lock()
                 pbar = tqdm(total=len(all_items), desc=self.title, unit='page')
-                self._download_items(all_items, dir_path, 'jpg', 'ch', 'page', pbar, lock)
+                with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
+                    futures = {}
+                    for section, item in all_items:
+                        safe_section = _sanitize_filename(section.title)
+                        section_dir = dir_path / f'ch_{section.idx:03d}_{safe_section}'
+                        section_dir.mkdir(exist_ok=True)
+                        safe_title = _sanitize_filename(item.title)
+                        if safe_title:
+                            filename = f'page_{item.idx:03d}_{safe_title}.jpg'
+                        else:
+                            filename = f'page_{item.idx:03d}.jpg'
+                        save_path = section_dir / filename
+                        futures[executor.submit(item.download, save_path, pbar, lock)] = (item, save_path)
+
+                    for future in as_completed(futures):
+                        try:
+                            future.result()
+                        except Exception as e:
+                            logger.error(f'Failed: {e}')
+                            if pbar and lock:
+                                with lock:
+                                    pbar.update(1)
                 pbar.close()
 
         self._export_html(dir_path, sections, local_images)
