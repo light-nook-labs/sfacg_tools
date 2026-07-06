@@ -215,6 +215,8 @@ __marimo__/
 # Progress database
 sfacglib/progress.db
 
+# Test output
+novel_689388_test/
 
 *.gif
 *.png

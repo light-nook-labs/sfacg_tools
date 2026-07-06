@@ -4,7 +4,7 @@ from pathlib import Path
 from loguru import logger
 from openai import OpenAI
 
-from .config import CHATBOT_MAX_FILE_SIZE, CORRECT_OCR_SYSTEM_PROMPT, settings
+from ..config import CHATBOT_MAX_FILE_SIZE, CORRECT_OCR_SYSTEM_PROMPT, settings
 
 AGENT_SYSTEM_PROMPT = """你是 SFACG Spider 的智能助手，可以通过自然语言帮助用户完成任务。
 
@@ -328,7 +328,7 @@ class ChatBot:
         return '\n'.join(lines) or '(empty)'
 
     def _tool_remove_pinyin(self, input_path: str, output_path: str = '') -> str:
-        from .ocr_fast import remove_pinyin_gif
+        from . import remove_pinyin_gif
 
         try:
             p = self._validate_path(input_path)
@@ -346,8 +346,7 @@ class ChatBot:
         return f'Done: {out} ({img.width}x{img.height})'
 
     def _tool_ocr_gif(self, input_path: str, output_path: str = '') -> str:
-        from .nlp import merge_wrapped_lines
-        from .ocr_fast import ocr_gif
+        from . import merge_wrapped_lines, ocr_gif
 
         try:
             p = self._validate_path(input_path)

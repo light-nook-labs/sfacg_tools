@@ -112,7 +112,6 @@ class VipMode(Enum):
     OCR = 'ocr'
     RAW = 'raw'
     LLM = 'llm'
-    DEEPSEEK_WEB = 'deepseek_web'
 
 
 class Settings(BaseSettings):

@@ -23,8 +23,11 @@
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 
-# 可选：OCR 支持
+# 可选：OCR 支持（CPU）
 uv sync --extra ocr
+
+# 可选：OCR 支持（GPU，需要 NVIDIA CUDA）
+uv sync --extra ocr --extra gpu
 ```
 
 > [!TIP]
@@ -235,14 +238,30 @@ VIP 章节分两种类型：
 
 ### 三种处理方式（仅加密 VIP 需要）
 
-| 方式 | 时间 | 输出 | 适用场景 |
-|------|------|------|----------|
-| 仅去拼音 | ~0.2s | 图像 | 只需阅读 |
-| 本地 OCR | ~39s | 文本 | 需要文字版 |
-| OCR + LLM 纠正 | ~66s | 纠正文本 | 高质量需求 |
+| 方式 | 2014 低配 PC | 现代 PC | 输出 | 适用场景 |
+|------|-------------|---------|------|----------|
+| 仅去拼音 | ~0.2s | ~0.1s | 图像 | 只需阅读 |
+| 本地 OCR | ~39s | ~14s | 文本 | 需要文字版 |
+| OCR + LLM 纠正 | ~66s | ~40s | 纠正文本 | 高质量需求 |
 
 > [!NOTE]
-> 测试硬件：Dell Latitude 7350（2014 无风扇二合一平板），Intel Core M-5Y71 @ 1.20GHz（2 核 4 线程，睿频 2.9GHz），8GB DDR3，无风扇无散热孔无 USB，CPU 50-60°C 降频。现代硬件预计快 3-5 倍。
+> **测试硬件对比：**
+> - **2014 低配 PC**: Dell Latitude 7350（无风扇二合一平板），Intel Core M-5Y71 @ 1.20GHz（2 核 4 线程，睿频 2.9GHz），8GB DDR3
+> - **现代 PC**: Intel Core i7-14700K（20 核 28 线程），32GB DDR5，NVIDIA RTX 5070 Ti
+> - 测试文件：VIP 章节 GIF（348 KB，1909 字）
+>
+> GPU 加速对小型图像（单帧 GIF）无明显效果，因为 GPU 数据传输开销大于计算收益。GPU 适合大批量处理或全页 OCR（含检测）场景。
+
+### GPU 加速
+
+OCR 自动检测 GPU 并启用加速。安装 GPU 支持：
+
+```bash
+uv sync --extra ocr --extra gpu
+```
+
+> [!NOTE]
+> 需要 NVIDIA GPU + CUDA 11.8+。GPU 加速对当前行切分 OCR 模型提升有限（~1.0x），主要收益来自现代 CPU 的多核性能。
 
 ### 去拼音 API
 

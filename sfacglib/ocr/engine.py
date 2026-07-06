@@ -9,23 +9,52 @@ import numpy as np
 from loguru import logger
 from PIL import Image
 
-from .config import OCR_WORKERS
+from ..config import OCR_WORKERS
 
 _ocr_instance = None
 _ocr_lock = threading.Lock()
+_gpu_available: bool | None = None
+
+
+def _check_gpu_available() -> bool:
+    global _gpu_available
+    if _gpu_available is not None:
+        return _gpu_available
+    try:
+        import onnxruntime as ort
+
+        providers = ort.get_available_providers()
+        _gpu_available = 'CUDAExecutionProvider' in providers
+        if _gpu_available:
+            logger.info(f'GPU available: {providers}')
+        else:
+            logger.info(f'GPU not available, providers: {providers}')
+    except ImportError:
+        _gpu_available = False
+    return _gpu_available
+
+
+def _get_providers() -> list[str]:
+    if _check_gpu_available():
+        return ['CUDAExecutionProvider', 'CPUExecutionProvider']
+    return ['CPUExecutionProvider']
 
 
 def _get_ocr(cpu_num_threads: int = 4):
     global _ocr_instance
-    if _ocr_instance is None:
-        with _ocr_lock:
-            if _ocr_instance is None:
-                try:
-                    from rapidocr_onnxruntime import RapidOCR
+    if _ocr_instance is not None:
+        return _ocr_instance
+    with _ocr_lock:
+        if _ocr_instance is not None:
+            return _ocr_instance
+        try:
+            from rapidocr_onnxruntime import RapidOCR
 
-                    _ocr_instance = RapidOCR(cpu_num_threads=cpu_num_threads)
-                except ImportError:
-                    raise ImportError('OCR dependencies not installed. Run: uv sync --extra ocr')
+            providers = _get_providers()
+            logger.info(f'Initializing OCR with providers: {providers}')
+            _ocr_instance = RapidOCR(cpu_num_threads=cpu_num_threads, providers=providers)
+        except ImportError:
+            raise ImportError('OCR dependencies not installed. Run: uv sync --extra ocr')
     return _ocr_instance
 
 
@@ -259,7 +288,7 @@ def ocr_image(image_source: str | Path, workers: int = OCR_WORKERS, cpu_num_thre
     if isinstance(image_source, Path) or not str(image_source).startswith('http'):
         img_bytes = Path(image_source).read_bytes()
     else:
-        from .fetcher import Fetcher
+        from ..fetcher import Fetcher
 
         img_bytes = Fetcher().get_binary(str(image_source))
 
@@ -312,133 +341,3 @@ def ocr_bytes(image_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: i
         return ocr_gif(image_bytes, workers, cpu_num_threads)
     else:
         return ocr_image(img, workers, cpu_num_threads)
-
-
-def ocr_gif_with_llm(
-    gif_bytes: bytes,
-    provider: str = 'kimi',
-    api_key: str = '',
-    base_url: str = '',
-    vision_model: str = '',
-    text_model: str = '',
-    batch_size: int = 10,
-    use_web: bool = False,
-    headless: bool = False,
-) -> str:
-    lines = prepare_lines_as_images(gif_bytes)
-    if not lines:
-        return ''
-
-    if use_web:
-        from .web_llm_vision import create_web_llm_vision
-
-        llm_client = create_web_llm_vision(provider=provider, headless=headless)
-    else:
-        from .llm_vision import create_llm_vision
-
-        llm_client = create_llm_vision(
-            provider=provider,
-            api_key=api_key,
-            base_url=base_url,
-            vision_model=vision_model,
-            text_model=text_model,
-        )
-
-    all_results: list[str] = []
-    for batch_idx in range(0, len(lines), batch_size):
-        batch = lines[batch_idx : batch_idx + batch_size]
-        try:
-            if use_web:
-                for img in batch:
-                    all_results.append(llm_client.ocr_image(img))
-            else:
-                all_results.extend(llm_client.ocr_images(batch))
-        except Exception as e:
-            logger.error(f'ocr_gif_with_llm: batch failed: {e}')
-            all_results.extend([''] * len(batch))
-
-    return '\n'.join(r for r in all_results if r)
-
-
-def ocr_image_with_llm(
-    image_source: str | Path,
-    provider: str = 'kimi',
-    api_key: str = '',
-    base_url: str = '',
-    vision_model: str = '',
-    text_model: str = '',
-    batch_size: int = 10,
-    use_web: bool = False,
-    headless: bool = False,
-) -> str:
-    if isinstance(image_source, Path) or not str(image_source).startswith('http'):
-        img_bytes = Path(image_source).read_bytes()
-    else:
-        from .fetcher import Fetcher
-
-        img_bytes = Fetcher().get_binary(str(image_source))
-
-    suffix = Path(str(image_source)).suffix.lower()
-    if suffix == '.gif':
-        return ocr_gif_with_llm(
-            img_bytes,
-            provider=provider,
-            api_key=api_key,
-            base_url=base_url,
-            vision_model=vision_model,
-            text_model=text_model,
-            batch_size=batch_size,
-            use_web=use_web,
-            headless=headless,
-        )
-
-    if use_web:
-        from .web_llm_vision import create_web_llm_vision
-
-        llm_client = create_web_llm_vision(provider=provider, headless=headless)
-    else:
-        from .llm_vision import create_llm_vision
-
-        llm_client = create_llm_vision(
-            provider=provider,
-            api_key=api_key,
-            base_url=base_url,
-            vision_model=vision_model,
-            text_model=text_model,
-        )
-
-    return llm_client.ocr_image(img_bytes)
-
-
-def prepare_lines_as_images(gif_bytes: bytes) -> list[Image.Image]:
-    frames = gif_to_frames(gif_bytes)
-    all_lines: list[Image.Image] = []
-    for frame in frames:
-        cropped = crop_whitespace(frame)
-        if cropped is None:
-            continue
-        gray = np.array(cropped.convert('L'))
-        gaps = find_line_gaps(gray, min_gap=5)
-        lines_bounds = gaps_to_lines_bounds(gaps, cropped.height, min_gap=5, min_height=10)
-        lines = [cropped.crop((0, top, cropped.width, bottom)) for top, bottom in lines_bounds]
-        for line in lines:
-            h = line.height
-            crop_top = int(h * 0.2)
-            no_pinyin = line.crop((0, crop_top, line.width, h))
-            c = crop_whitespace(no_pinyin)
-            if c is not None:
-                all_lines.append(c)
-    return all_lines
-
-
-def image_to_bytes(image: Image.Image, format: str = 'PNG') -> bytes:
-    buffer = BytesIO()
-    image.save(buffer, format=format)
-    return buffer.getvalue()
-
-
-def split_lines(image: Image.Image, min_gap: int = 5, min_height: int = 10) -> list[Image.Image]:
-    gray = np.array(image.convert('L'))
-    gaps = find_line_gaps(gray, min_gap)
-    lines_bounds = gaps_to_lines_bounds(gaps, image.height, min_gap=min_gap, min_height=min_height)
-    return [image.crop((0, top, image.width, bottom)) for top, bottom in lines_bounds]

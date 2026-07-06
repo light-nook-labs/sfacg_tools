@@ -199,7 +199,7 @@ def cmd_search(args):
 
 
 def cmd_ocr(args):
-    from sfacglib.ocr_fast import ocr_image
+    from sfacglib.ocr import ocr_image
 
     text = ocr_image(args.source, workers=args.workers)
     if args.output:
@@ -212,7 +212,7 @@ def cmd_ocr(args):
 
 
 def cmd_ocr_preprocess(args):
-    from sfacglib.ocr_fast import remove_pinyin_gif
+    from sfacglib.ocr import remove_pinyin_gif
 
     source = Path(args.source)
     if not source.exists():
