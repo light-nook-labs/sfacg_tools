@@ -102,7 +102,7 @@ def process_vip_chapter(
 
         _vip_rate_limit(fetcher)
         logger.info(f'Downloading VIP image (attempt {attempt + 1}): {image_url}')
-        resp = fetcher.get(image_url)
+        resp = fetcher.get(image_url, vip=True)
         gif_bytes = resp.content
 
         valid, info = validate_gif(gif_bytes, expected_w)
@@ -191,7 +191,7 @@ class NovelChapter(Item):
         cid = _extract_id(self.url)
         src = f'{API_VIP_IMAGE}?op=getChapPic&tp=true&quick=true&cid={cid}&nid={self.nid}&font=16&lang=&w={VIP_IMAGE_WIDTH}'
 
-        gif_bytes = self.fetcher.get(src, headers={'Referer': self.url}, timeout=(10, 30)).content
+        gif_bytes = self.fetcher.get(src, headers={'Referer': self.url}, timeout=(10, 30), vip=True).content
 
         valid, info = validate_gif(gif_bytes, VIP_IMAGE_WIDTH)
         if not valid:

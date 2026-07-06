@@ -130,7 +130,7 @@ class ComicChapter(Section):
         }
 
         try:
-            resp = self.fetcher.get(api_url, params=params, headers=headers)
+            resp = self.fetcher.get(api_url, params=params, headers=headers, vip=use_vip_api)
             data = resp.json()
         except Exception as e:
             if not use_vip_api:
