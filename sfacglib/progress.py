@@ -1,9 +1,11 @@
-import sqlite3
 import re
+import sqlite3
 import threading
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
 from loguru import logger
+
 from .config import PACKAGE_DIR
 
 DB_PATH = PACKAGE_DIR / 'progress.db'
@@ -17,7 +19,7 @@ def _extract_id(url: str) -> str:
 def _connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path or DB_PATH), check_same_thread=False)
     conn.execute('PRAGMA journal_mode=WAL')
-    conn.execute('''
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             type TEXT NOT NULL,
@@ -30,8 +32,8 @@ def _connect(db_path: str | Path | None = None) -> sqlite3.Connection:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
-    ''')
-    conn.execute('''
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS chapters (
             task_id TEXT NOT NULL,
             cid TEXT NOT NULL,
@@ -42,13 +44,12 @@ def _connect(db_path: str | Path | None = None) -> sqlite3.Connection:
             PRIMARY KEY (task_id, cid),
             FOREIGN KEY (task_id) REFERENCES tasks(id)
         )
-    ''')
+    """)
     conn.commit()
     return conn
 
 
 class ProgressTracker:
-
     def __init__(self, db_path: str | Path | None = None):
         self.db_path = db_path or DB_PATH
         self.conn = _connect(self.db_path)
@@ -169,7 +170,10 @@ class ProgressTracker:
 
     def summary(self, task_id: str) -> dict:
         with self._lock:
-            task = self.conn.execute('SELECT id, type, title, output_dir, format, total, completed, status, created_at, updated_at FROM tasks WHERE id=?', (task_id,)).fetchone()
+            task = self.conn.execute(
+                'SELECT id, type, title, output_dir, format, total, completed, status, created_at, updated_at FROM tasks WHERE id=?',
+                (task_id,),
+            ).fetchone()
             if not task:
                 return {}
             total_row = self.conn.execute(
@@ -194,11 +198,10 @@ class ProgressTracker:
 
     def list_tasks(self) -> list[dict]:
         with self._lock:
-            rows = self.conn.execute('SELECT id, type, title, status, completed, total FROM tasks ORDER BY updated_at DESC').fetchall()
-        return [
-            {'id': r[0], 'type': r[1], 'title': r[2], 'status': r[3], 'done': r[4], 'total': r[5]}
-            for r in rows
-        ]
+            rows = self.conn.execute(
+                'SELECT id, type, title, status, completed, total FROM tasks ORDER BY updated_at DESC'
+            ).fetchall()
+        return [{'id': r[0], 'type': r[1], 'title': r[2], 'status': r[3], 'done': r[4], 'total': r[5]} for r in rows]
 
     def cleanup_done(self):
         with self._lock:

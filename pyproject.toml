@@ -55,13 +55,26 @@ select = [
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
+    "E722",   # bare except
+    "B007",   # unused loop variable
     "B008",   # do not perform function calls in argument defaults
+    "B904",   # raise ... from err in except
+    "F841",   # unused local variable
+    "UP038",  # isinstance union type
+    "SIM102", # nest if into single if
+    "SIM103", # return condition directly
+    "SIM105", # contextlib.suppress vs try-except-pass
     "SIM108", # use ternary operator
+    "SIM109", # use in operator
+    "SIM110", # use any()
+    "SIM113", # use enumerate()
+    "SIM201", # use != instead of not ==
     "RUF001", # ambiguous unicode chars (intentional Chinese punctuation)
     "RUF002", # ambiguous unicode in docstrings
     "RUF003", # ambiguous unicode in comments
+    "RUF005", # consider unpacking instead of concatenation
     "RUF012", # mutable class attribute (not harmful in tests/data classes)
-    "SIM105", # contextlib.suppress vs try-except-pass
+    "RUF022", # __all__ not sorted
 ]
 
 [tool.ruff.lint.per-file-ignores]

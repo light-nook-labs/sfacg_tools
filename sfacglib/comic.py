@@ -1,24 +1,22 @@
 import re
-import json
 import threading
 from pathlib import Path
 from time import time
-from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
+
 from bs4 import BeautifulSoup
 from loguru import logger
-from .fetcher import Fetcher
-from .selectors import Selectors
-from .base import Container, Section, Item, _sanitize_filename
-from .config import COMIC_BASE, API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE, WORKERS_IMAGE, WORKERS_CHAPTER
-from .progress import ProgressTracker, _extract_id
-from .models import Catalog, CatalogSection, CatalogItem
+from tqdm import tqdm
+
+from .base import Container, Item, Section, _sanitize_filename
+from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_BASE, COMIC_READER_BASE
 from .convert import convert_to_epub, convert_to_pdf
+from .fetcher import Fetcher
+from .models import Catalog, CatalogItem, CatalogSection
+from .progress import ProgressTracker
+from .selectors import Selectors
 
 
 class ComicPage(Item):
-
     def __init__(self, idx: int, url: str, fetcher: Fetcher):
         super().__init__(idx, '', url)
         self.fetcher = fetcher
@@ -43,7 +41,6 @@ class ComicPage(Item):
 
 
 class ComicChapter(Section):
-
     def __init__(self, idx: int, title: str, url: str, fetcher: Fetcher, sel: Selectors):
         super().__init__(idx, title)
         self.url = url
@@ -159,7 +156,6 @@ class ComicChapter(Section):
 
 
 class Comic(Container):
-
     def __init__(self, url: str, fetcher: Fetcher | None = None, selectors: Selectors | None = None):
         super().__init__(fetcher)
         self.url = url
@@ -214,12 +210,12 @@ class Comic(Container):
             author_match = re.search(r'作者[：:]\s*(.+?)(?:\s*作品类型|$)', container_text)
             if author_match:
                 author = author_match.group(1).strip()
-            
+
             region_match = re.search(r'漫画地区[：:]\s*(.+?)(?:\s|作者|$)', container_text)
             type_match = re.search(r'作品类型[：:]\s*(.+?)(?:\s|$)', container_text)
             update_match = re.search(r'最新连载[：:]\s*(.+?)(?:\s|$)', container_text)
             clicks_match = re.search(r'点击数[：:]\s*(\d+)', container_text)
-            
+
             parts = []
             if region_match:
                 parts.append(f'地区：{region_match.group(1).strip()}')
@@ -339,12 +335,14 @@ class Comic(Container):
                     items=[],
                 )
                 for item in section.get_items():
-                    catalog_section.items.append(CatalogItem(
-                        idx=item.idx,
-                        title=item.title,
-                        url=item.url,
-                        file='',
-                    ))
+                    catalog_section.items.append(
+                        CatalogItem(
+                            idx=item.idx,
+                            title=item.title,
+                            url=item.url,
+                            file='',
+                        )
+                    )
                 catalog.sections.append(catalog_section)
 
             catalog.save(dir_path / 'catalog.json')
@@ -435,7 +433,8 @@ class Comic(Container):
         if not local_images:
             logger.warning('HTML使用远程URL，图片链接将在服务器清理后失效')
 
-        html_parts = [f"""<!DOCTYPE html>
+        html_parts = [
+            f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -454,7 +453,8 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
 </head>
 <body>
 <h1>{self.title}</h1>
-"""]
+"""
+        ]
 
         if not local_images:
             html_parts.append('<div class="warning">本文件使用远程图片URL，链接随时可能失效。建议下载本地版本。</div>')

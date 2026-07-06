@@ -1,12 +1,12 @@
 import customtkinter as ctk
-from .novel_tab import NovelTab
-from .comic_tab import ComicTab
+
 from .audio_tab import AudioTab
+from .comic_tab import ComicTab
+from .novel_tab import NovelTab
 from .settings_tab import SettingsTab
 
 
 class App(ctk.CTk):
-
     def __init__(self):
         super().__init__()
 

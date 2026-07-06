@@ -1,6 +1,7 @@
 def run_pc():
     try:
         from .app import App
+
         app = App()
         app.mainloop()
     except ImportError as e:

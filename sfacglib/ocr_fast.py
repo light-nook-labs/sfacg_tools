@@ -1,12 +1,13 @@
 import re
-import time
 import threading
-import numpy as np
-from pathlib import Path
-from io import BytesIO
-from PIL import Image
-from loguru import logger
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
+from pathlib import Path
+
+import numpy as np
+from loguru import logger
+from PIL import Image
 
 from .config import OCR_WORKERS
 
@@ -21,11 +22,10 @@ def _get_ocr(cpu_num_threads: int = 4):
             if _ocr_instance is None:
                 try:
                     from rapidocr_onnxruntime import RapidOCR
+
                     _ocr_instance = RapidOCR(cpu_num_threads=cpu_num_threads)
                 except ImportError:
-                    raise ImportError(
-                        "OCR dependencies not installed. Run: uv sync --extra ocr"
-                    )
+                    raise ImportError('OCR dependencies not installed. Run: uv sync --extra ocr')
     return _ocr_instance
 
 
@@ -79,7 +79,9 @@ def find_line_gaps(gray_array: np.ndarray, min_gap: int = 5) -> list[tuple[int, 
     return gaps
 
 
-def gaps_to_lines_bounds(gaps: list[tuple[int, int]], height: int, min_gap: int = 5, min_height: int = 10) -> list[tuple[int, int]]:
+def gaps_to_lines_bounds(
+    gaps: list[tuple[int, int]], height: int, min_gap: int = 5, min_height: int = 10
+) -> list[tuple[int, int]]:
     lines_bounds = []
     prev = 0
     for gap_start, gap_end in gaps:
@@ -118,7 +120,7 @@ def _remove_pinyin_from_image(gray: np.ndarray, lines_bounds: list[tuple[int, in
         line = gray[y_start:y_end, :]
         text_y = _find_text_start_vectorized(line)
         if text_y > 0:
-            processed[y_start:y_start + text_y, :] = 255
+            processed[y_start : y_start + text_y, :] = 255
     return processed
 
 
@@ -186,10 +188,7 @@ def ocr_gif(gif_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: int =
             _ocr_line_rec_only((0, warmup_img))
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(_ocr_line_rec_only, (lid, img)): lid
-                for lid, img in line_images
-            }
+            futures = {executor.submit(_ocr_line_rec_only, (lid, img)): lid for lid, img in line_images}
             for future in as_completed(futures):
                 lid, text = future.result()
                 if text:
@@ -261,6 +260,7 @@ def ocr_image(image_source: str | Path, workers: int = OCR_WORKERS, cpu_num_thre
         img_bytes = Path(image_source).read_bytes()
     else:
         from .fetcher import Fetcher
+
         img_bytes = Fetcher().get_binary(str(image_source))
 
     suffix = Path(str(image_source)).suffix.lower()
@@ -293,10 +293,7 @@ def ocr_image(image_source: str | Path, workers: int = OCR_WORKERS, cpu_num_thre
 
     results: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(_ocr_line_rec_only, (lid, img)): lid
-            for lid, img in line_images
-        }
+        futures = {executor.submit(_ocr_line_rec_only, (lid, img)): lid for lid, img in line_images}
         for future in as_completed(futures):
             lid, text = future.result()
             if text:
@@ -306,8 +303,10 @@ def ocr_image(image_source: str | Path, workers: int = OCR_WORKERS, cpu_num_thre
 
 
 def ocr_bytes(image_bytes: bytes, workers: int = OCR_WORKERS, cpu_num_threads: int = 4) -> str:
-    from PIL import Image
     from io import BytesIO
+
+    from PIL import Image
+
     img = Image.open(BytesIO(image_bytes))
     if img.format == 'GIF':
         return ocr_gif(image_bytes, workers, cpu_num_threads)
@@ -332,17 +331,22 @@ def ocr_gif_with_llm(
 
     if use_web:
         from .web_llm_vision import create_web_llm_vision
+
         llm_client = create_web_llm_vision(provider=provider, headless=headless)
     else:
         from .llm_vision import create_llm_vision
+
         llm_client = create_llm_vision(
-            provider=provider, api_key=api_key, base_url=base_url,
-            vision_model=vision_model, text_model=text_model,
+            provider=provider,
+            api_key=api_key,
+            base_url=base_url,
+            vision_model=vision_model,
+            text_model=text_model,
         )
 
     all_results: list[str] = []
     for batch_idx in range(0, len(lines), batch_size):
-        batch = lines[batch_idx:batch_idx + batch_size]
+        batch = lines[batch_idx : batch_idx + batch_size]
         try:
             if use_web:
                 for img in batch:
@@ -371,24 +375,36 @@ def ocr_image_with_llm(
         img_bytes = Path(image_source).read_bytes()
     else:
         from .fetcher import Fetcher
+
         img_bytes = Fetcher().get_binary(str(image_source))
 
     suffix = Path(str(image_source)).suffix.lower()
     if suffix == '.gif':
         return ocr_gif_with_llm(
-            img_bytes, provider=provider, api_key=api_key, base_url=base_url,
-            vision_model=vision_model, text_model=text_model,
-            batch_size=batch_size, use_web=use_web, headless=headless,
+            img_bytes,
+            provider=provider,
+            api_key=api_key,
+            base_url=base_url,
+            vision_model=vision_model,
+            text_model=text_model,
+            batch_size=batch_size,
+            use_web=use_web,
+            headless=headless,
         )
 
     if use_web:
         from .web_llm_vision import create_web_llm_vision
+
         llm_client = create_web_llm_vision(provider=provider, headless=headless)
     else:
         from .llm_vision import create_llm_vision
+
         llm_client = create_llm_vision(
-            provider=provider, api_key=api_key, base_url=base_url,
-            vision_model=vision_model, text_model=text_model,
+            provider=provider,
+            api_key=api_key,
+            base_url=base_url,
+            vision_model=vision_model,
+            text_model=text_model,
         )
 
     return llm_client.ocr_image(img_bytes)

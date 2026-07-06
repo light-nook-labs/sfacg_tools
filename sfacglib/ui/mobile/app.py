@@ -1,5 +1,6 @@
 import re
 from threading import Thread
+
 import flet as ft
 
 
@@ -31,8 +32,8 @@ def main(page: ft.Page):
 
         def _download():
             try:
-                from sfacglib.novel import Novel
                 from sfacglib.fetcher import Fetcher
+                from sfacglib.novel import Novel
                 from sfacglib.progress import ProgressTracker
 
                 log(novel_output, f'开始下载: {nid}')
@@ -146,6 +147,7 @@ def main(page: ft.Page):
 
         try:
             from sfacglib.fetcher import Fetcher
+
             fetcher = Fetcher()
             fetcher.import_cookies(cookie)
             settings_status.value = '导入成功'
@@ -157,12 +159,16 @@ def main(page: ft.Page):
 
     # Novel tab
     nid_field = ft.TextField(label='小说ID或URL', hint_text='输入小说ID或URL')
-    format_dropdown = ft.Dropdown(label='格式', value='epub', options=[
-        ft.dropdown.Option('epub'),
-        ft.dropdown.Option('md'),
-        ft.dropdown.Option('txt'),
-        ft.dropdown.Option('html'),
-    ])
+    format_dropdown = ft.Dropdown(
+        label='格式',
+        value='epub',
+        options=[
+            ft.dropdown.Option('epub'),
+            ft.dropdown.Option('md'),
+            ft.dropdown.Option('txt'),
+            ft.dropdown.Option('html'),
+        ],
+    )
     output_field = ft.TextField(label='输出目录', value='./output/')
     review_check = ft.Checkbox(label='下载评论', value=False)
     btn = ft.ElevatedButton('下载', on_click=download_novel)
@@ -191,58 +197,69 @@ def main(page: ft.Page):
         tabs=[
             ft.Tab(
                 text='小说',
-                content=ft.Column([
-                    nid_field,
-                    format_dropdown,
-                    output_field,
-                    review_check,
-                    btn,
-                    ft.Container(
-                        content=novel_output,
-                        bgcolor=ft.colors.BLACK12,
-                        padding=10,
-                        border_radius=8,
-                        expand=True,
-                    ),
-                ], scroll=ft.ScrollMode.AUTO),
+                content=ft.Column(
+                    [
+                        nid_field,
+                        format_dropdown,
+                        output_field,
+                        review_check,
+                        btn,
+                        ft.Container(
+                            content=novel_output,
+                            bgcolor=ft.colors.BLACK12,
+                            padding=10,
+                            border_radius=8,
+                            expand=True,
+                        ),
+                    ],
+                    scroll=ft.ScrollMode.AUTO,
+                ),
             ),
             ft.Tab(
                 text='漫画',
-                content=ft.Column([
-                    comic_url_field,
-                    comic_output_field,
-                    comic_btn,
-                    ft.Container(
-                        content=comic_output,
-                        bgcolor=ft.colors.BLACK12,
-                        padding=10,
-                        border_radius=8,
-                        expand=True,
-                    ),
-                ], scroll=ft.ScrollMode.AUTO),
+                content=ft.Column(
+                    [
+                        comic_url_field,
+                        comic_output_field,
+                        comic_btn,
+                        ft.Container(
+                            content=comic_output,
+                            bgcolor=ft.colors.BLACK12,
+                            padding=10,
+                            border_radius=8,
+                            expand=True,
+                        ),
+                    ],
+                    scroll=ft.ScrollMode.AUTO,
+                ),
             ),
             ft.Tab(
                 text='有声',
-                content=ft.Column([
-                    audio_id_field,
-                    audio_output_field,
-                    audio_btn,
-                    ft.Container(
-                        content=audio_output,
-                        bgcolor=ft.colors.BLACK12,
-                        padding=10,
-                        border_radius=8,
-                        expand=True,
-                    ),
-                ], scroll=ft.ScrollMode.AUTO),
+                content=ft.Column(
+                    [
+                        audio_id_field,
+                        audio_output_field,
+                        audio_btn,
+                        ft.Container(
+                            content=audio_output,
+                            bgcolor=ft.colors.BLACK12,
+                            padding=10,
+                            border_radius=8,
+                            expand=True,
+                        ),
+                    ],
+                    scroll=ft.ScrollMode.AUTO,
+                ),
             ),
             ft.Tab(
                 text='设置',
-                content=ft.Column([
-                    cookie_field,
-                    settings_btn,
-                    settings_status,
-                ]),
+                content=ft.Column(
+                    [
+                        cookie_field,
+                        settings_btn,
+                        settings_status,
+                    ]
+                ),
             ),
         ],
         expand=True,

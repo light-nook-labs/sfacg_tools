@@ -1,19 +1,20 @@
 import json
 import re
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
+from pathlib import Path
+
 from bs4 import BeautifulSoup, Tag
 from loguru import logger
+from tqdm import tqdm
+
+from .config import AUDIOBOOKS_JSON, URL_AUDIO, WORKERS_AUDIO_CHAPTER
 from .fetcher import Fetcher
-from .selectors import Selectors
-from .config import MOBILE_BASE, URL_AUDIO, AUDIOBOOKS_JSON, WORKERS_AUDIO_CHAPTER
-from .utils import sanitize_filename, mobile_url, parse_volume_ul, run_tasks
 from .progress import ProgressTracker, _extract_id
+from .selectors import Selectors
+from .utils import mobile_url, parse_volume_ul, run_tasks, sanitize_filename
 
 
 class AudioChapter:
-
     def __init__(self, title: str, url: str, fetcher: Fetcher | None = None):
         self.title = sanitize_filename(title)
         self.url = mobile_url(url)
@@ -49,7 +50,6 @@ class AudioChapter:
 
 
 class AudioVolume:
-
     def __init__(self, tag: Tag, fetcher: Fetcher | None = None, selectors: Selectors | None = None):
         self.tag: Tag | None = parse_volume_ul(tag)
         self.title: str = tag.string or '未命名卷'
@@ -98,7 +98,6 @@ class AudioVolume:
 
 
 class Audio:
-
     def __init__(self, audio_id: int, fetcher: Fetcher | None = None, selectors: Selectors | None = None):
         self.id = audio_id
         self.url = f'{URL_AUDIO}{audio_id}/'
@@ -118,7 +117,9 @@ class Audio:
             raise ValueError(f'未找到id为{audio_id}的有声小说，请调用 Audio.scan() 更新')
 
     @staticmethod
-    def scan(start: int = 0, end: int = 200, fetcher: Fetcher | None = None, workers: int = 20) -> list[dict[str, int | str]]:
+    def scan(
+        start: int = 0, end: int = 200, fetcher: Fetcher | None = None, workers: int = 20
+    ) -> list[dict[str, int | str]]:
         if fetcher is None:
             fetcher = Fetcher(default_delay=0.05)
         valid: list[dict[str, int | str]] = []
@@ -235,8 +236,11 @@ class Audio:
 
             if is_index:
                 total = len(all_chapters)
-                all_chapters = [(v, t, u) for idx, (v, t, u) in enumerate(all_chapters)
-                                if str(idx + 1) in ids or str(idx - total) in ids]
+                all_chapters = [
+                    (v, t, u)
+                    for idx, (v, t, u) in enumerate(all_chapters)
+                    if str(idx + 1) in ids or str(idx - total) in ids
+                ]
             else:
                 all_chapters = [(v, t, u) for v, t, u in all_chapters if _extract_id(u) in ids or t in ids]
 

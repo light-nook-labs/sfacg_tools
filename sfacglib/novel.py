@@ -1,22 +1,32 @@
-import re
-import time
 import random
+import re
 import tempfile
+import time
 from pathlib import Path
+
 from bs4 import BeautifulSoup, NavigableString, Tag
 from loguru import logger
-from .fetcher import Fetcher
-from .selectors import Selectors, SelectorError
-from .base import Container, Section, Item, _sanitize_filename
+
+from .base import Container, Item, Section
 from .config import (
-    URL_NOVEL_INDEX, URL_NOVEL_MENU, PC_BASE,
-    URL_REVIEW_LIST, URL_REVIEW_DETAIL, API_HTML5, API_VIP_IMAGE, VIP_IMAGE_WIDTH,
-    VIP_DELAY_RANGE, VIP_RETRY_DELAYS, VipMode, settings, CORRECT_OCR_SYSTEM_PROMPT,
+    API_HTML5,
+    API_VIP_IMAGE,
+    CORRECT_OCR_SYSTEM_PROMPT,
     OCR_WORKERS,
+    PC_BASE,
+    URL_NOVEL_INDEX,
+    URL_NOVEL_MENU,
+    URL_REVIEW_DETAIL,
+    VIP_DELAY_RANGE,
+    VIP_IMAGE_WIDTH,
+    VIP_RETRY_DELAYS,
+    VipMode,
+    settings,
 )
-from .progress import ProgressTracker, _extract_id
-from .utils import parse_volume_ul, mobile_url, fix_url_protocol, validate_gif
-from .models import Catalog, CatalogSection, CatalogItem
+from .fetcher import Fetcher
+from .progress import _extract_id
+from .selectors import SelectorError, Selectors
+from .utils import fix_url_protocol, mobile_url, parse_volume_ul, validate_gif
 
 ICN_IMG = '\ue905'
 
@@ -77,7 +87,8 @@ def process_vip_chapter(
 ) -> tuple[str, list[Path]]:
     fetcher = fetcher or Fetcher()
 
-    from urllib.parse import urlparse, parse_qs
+    from urllib.parse import parse_qs, urlparse
+
     parsed = urlparse(image_url)
     qs = parse_qs(parsed.query)
     expected_w = int(qs.get('w', [0])[0])
@@ -112,6 +123,7 @@ def process_vip_chapter(
 
     if mode == VipMode.RAW:
         from .ocr_fast import gif_to_frames
+
         frames = gif_to_frames(gif_bytes)
         if save_dir is None:
             save_dir = Path(tempfile.mkdtemp(prefix='sfacg_vip_'))
@@ -126,6 +138,7 @@ def process_vip_chapter(
 
     if mode == VipMode.DEEPSEEK_WEB:
         from .web_llm_vision import DeepSeekWebOCR
+
         logger.info('Running DeepSeek Web OCR (no API key needed)...')
         try:
             deepseek_web = DeepSeekWebOCR(headless=False)
@@ -142,6 +155,7 @@ def process_vip_chapter(
             logger.error(f'DeepSeek Web failed: {e}')
             logger.info('Falling back to standard OCR...')
             from .ocr_fast import ocr_gif
+
             text = ocr_gif(gif_bytes, workers=workers)
             frame_paths = []
             if save_dir:
@@ -149,6 +163,7 @@ def process_vip_chapter(
             return text, frame_paths
 
     from .ocr_fast import ocr_gif
+
     logger.info('Running OCR (fast)...')
     text = ocr_gif(gif_bytes, workers=workers)
 
@@ -166,10 +181,16 @@ def process_vip_chapter(
 
 
 class NovelChapter(Item):
-
-    def __init__(self, idx: int = 0, title: str = '', url: str = '',
-                 fetcher: Fetcher | None = None, sel: Selectors | None = None,
-                 nid: str = '', vip: bool = False):
+    def __init__(
+        self,
+        idx: int = 0,
+        title: str = '',
+        url: str = '',
+        fetcher: Fetcher | None = None,
+        sel: Selectors | None = None,
+        nid: str = '',
+        vip: bool = False,
+    ):
         super().__init__(idx, title, url)
         self.fetcher = fetcher or Fetcher()
         self.sel = sel or Selectors()
@@ -329,8 +350,11 @@ class NovelChapter(Item):
             return f'{API_VIP_IMAGE}?op=getChapPic&tp=true&quick=true&cid={chapter_id}&nid={novel_id}&font=16&lang=&w={VIP_IMAGE_WIDTH}'
 
         raise SelectorError(
-            page='chapter_vip', field='vip_image', selector='#vipImage',
-            url=self.url, description='Cannot find VIP image URL or chapter IDs',
+            page='chapter_vip',
+            field='vip_image',
+            selector='#vipImage',
+            url=self.url,
+            description='Cannot find VIP image URL or chapter IDs',
         )
 
     def _get_vip_content(self, soup: BeautifulSoup) -> tuple[str, str]:
@@ -353,8 +377,7 @@ class NovelChapter(Item):
         if text:
             content_md = f'### {title}\n\n{other_info}\n\n{text}\n\n'
             content_html = (
-                f'<div class="ch"><h3>{title}</h3><p>{other_info}</p>'
-                f'<p>{text.replace(chr(10), "<br>")}</p></div>'
+                f'<div class="ch"><h3>{title}</h3><p>{other_info}</p><p>{text.replace(chr(10), "<br>")}</p></div>'
             )
         else:
             content_md = f'### {title}\n\n{other_info}\n\n[VIP内容 - 提取失败]({img_url})\n\n'
@@ -364,7 +387,6 @@ class NovelChapter(Item):
 
 
 class NovelVolume(Section):
-
     def __init__(self, idx: int, title: str, chapters: list[NovelChapter]):
         super().__init__(idx, title)
         self.chapters = chapters
@@ -374,7 +396,6 @@ class NovelVolume(Section):
 
 
 class ReviewComment(Item):
-
     def __init__(self, idx: int, cid: str, title: str, fetcher: Fetcher):
         super().__init__(idx, title, f'{URL_REVIEW_DETAIL}{cid}/')
         self.cid = cid
@@ -442,7 +463,6 @@ class ReviewComment(Item):
 
 
 class ReviewSection(Section):
-
     def __init__(self, idx: int, title: str, comments: list[ReviewComment]):
         super().__init__(idx, title)
         self.comments = comments
@@ -484,10 +504,17 @@ def _parse_pc_catalog(soup: BeautifulSoup, fetcher: Fetcher, sel: Selectors, nid
                 else:
                     url = mobile_url(href)
 
-                chapters.append(NovelChapter(
-                    ch_idx, title, url, fetcher, sel,
-                    nid=nid, vip=is_vip and not has_img,
-                ))
+                chapters.append(
+                    NovelChapter(
+                        ch_idx,
+                        title,
+                        url,
+                        fetcher,
+                        sel,
+                        nid=nid,
+                        vip=is_vip and not has_img,
+                    )
+                )
 
         volumes.append(NovelVolume(vol_idx, vol_title, chapters))
 
@@ -509,17 +536,22 @@ def _parse_mobile_catalog(soup: BeautifulSoup, fetcher: Fetcher, sel: Selectors,
                 href = a.get('href', '')
                 if href:
                     ch_idx += 1
-                    chapters.append(NovelChapter(
-                        ch_idx, a.get_text(), mobile_url(href), fetcher, sel,
-                        nid=nid,
-                    ))
+                    chapters.append(
+                        NovelChapter(
+                            ch_idx,
+                            a.get_text(),
+                            mobile_url(href),
+                            fetcher,
+                            sel,
+                            nid=nid,
+                        )
+                    )
         volumes.append(NovelVolume(vol_idx, vol_title, chapters))
 
     return volumes
 
 
 class Novel(Container):
-
     def __init__(
         self,
         nid: int,
@@ -566,15 +598,19 @@ class Novel(Container):
             word_match = re.search(r'(\d+)字', remainder)
             if word_match:
                 word_num = word_match.group(1)
-                date_match = re.search(r'(\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2})', remainder[word_match.end():])
+                date_match = re.search(r'(\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2})', remainder[word_match.end() :])
                 if date_match:
                     parts = date_match.group(1).split()
                     if len(parts) >= 2:
                         date, clock = parts[0], parts[1]
 
         counts_tags = self.sel.find_all(soup, 'novel_info', 'counts', url=index_url, required=False)
-        heart_num = counts_tags[0].string.strip() if counts_tags and len(counts_tags) >= 1 and counts_tags[0].string else '0'
-        praise_num = counts_tags[1].string.strip() if counts_tags and len(counts_tags) >= 2 and counts_tags[1].string else '0'
+        heart_num = (
+            counts_tags[0].string.strip() if counts_tags and len(counts_tags) >= 1 and counts_tags[0].string else '0'
+        )
+        praise_num = (
+            counts_tags[1].string.strip() if counts_tags and len(counts_tags) >= 2 and counts_tags[1].string else '0'
+        )
 
         intro = self.sel.find_text(soup, 'novel_info', 'introduction', url=index_url) or ''
         intro = '\n\n'.join(line.strip() for line in intro.split('\n\n'))
@@ -601,7 +637,7 @@ Generated by [SFACG Spider](https://github.com/light-nook-labs/sfacg)
 
 {intro}
 
-{'='*20}
+{'=' * 20}
 """
         info_html = f"""<!DOCTYPE html>
 <html>

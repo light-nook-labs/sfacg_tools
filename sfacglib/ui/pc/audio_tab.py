@@ -1,12 +1,13 @@
-import customtkinter as ctk
 from threading import Thread
+
+import customtkinter as ctk
+
 from sfacglib.audio import Audio
 from sfacglib.fetcher import Fetcher
 from sfacglib.progress import ProgressTracker
 
 
 class AudioTab(ctk.CTkFrame):
-
     def __init__(self, master):
         super().__init__(master)
 

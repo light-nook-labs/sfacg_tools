@@ -1,8 +1,9 @@
-import time
 import asyncio
-import tempfile
 import random
+import tempfile
+import time
 from pathlib import Path
+
 from loguru import logger
 from PIL import Image
 
@@ -76,16 +77,22 @@ def _is_valid_response(text: str) -> bool:
 
 def _fix_inline_spaces(text: str) -> str:
     import re
+
     lines = text.split('\n')
     result = []
     for line in lines:
-        cleaned = re.sub(r'(?<=[\u4e00-\u9fff，。！？、；：""''（）【】《》…—])\s+(?=[\u4e00-\u9fff，。！？、；：""''（）【】《》…—])', '', line)
+        cleaned = re.sub(
+            r'(?<=[\u4e00-\u9fff，。！？、；：""'
+            '（）【】《》…—])\\s+(?=[\u4e00-\u9fff，。！？、；：""'
+            '（）【】《》…—])',
+            '',
+            line,
+        )
         result.append(cleaned)
     return '\n'.join(result)
 
 
 class DeepSeekWebOCR:
-
     def __init__(self, headless: bool = False, timeout: int = 60000):
         self.headless = headless
         self.timeout = timeout
@@ -95,6 +102,7 @@ class DeepSeekWebOCR:
 
     async def _init_browser(self):
         from playwright.async_api import async_playwright
+
         self.playwright = await async_playwright().start()
         user_data_dir = Path.home() / '.sfacg' / 'browser_data'
         user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -123,7 +131,7 @@ class DeepSeekWebOCR:
                 await vision_radio.click()
                 await asyncio.sleep(1)
             else:
-                await self.page.evaluate('''() => {
+                await self.page.evaluate("""() => {
                     const elements = document.querySelectorAll('*');
                     for (const el of elements) {
                         if (el.textContent === 'Vision' && el.tagName !== 'SCRIPT') {
@@ -139,7 +147,7 @@ class DeepSeekWebOCR:
                         }
                     }
                     return false;
-                }''')
+                }""")
                 await asyncio.sleep(1)
         except Exception as e:
             logger.debug(f'DeepSeekWebOCR: Vision mode selection failed: {e}')
@@ -149,7 +157,8 @@ class DeepSeekWebOCR:
         word_count = random.choice([30, 40, 50, 60, 70, 80])
         full_msg = f'{msg}，请用{word_count}字以内回答。'
         try:
-            await self.page.evaluate('''(text) => {
+            await self.page.evaluate(
+                """(text) => {
                 const textarea = document.querySelector('textarea');
                 if (textarea) {
                     const setter = Object.getOwnPropertyDescriptor(
@@ -161,7 +170,9 @@ class DeepSeekWebOCR:
                     return true;
                 }
                 return false;
-            }''', full_msg)
+            }""",
+                full_msg,
+            )
             await asyncio.sleep(0.3)
             await self.page.focus('textarea')
             await asyncio.sleep(0.1)
@@ -174,10 +185,10 @@ class DeepSeekWebOCR:
     async def _upload_image(self, image_path: Path):
         upload_input = await self.page.query_selector('input[type="file"]')
         if upload_input:
-            logger.debug(f'DeepSeekWebOCR: Uploading image...')
+            logger.debug('DeepSeekWebOCR: Uploading image...')
             await upload_input.set_input_files(str(image_path))
             await asyncio.sleep(5)
-            logger.debug(f'DeepSeekWebOCR: Image uploaded')
+            logger.debug('DeepSeekWebOCR: Image uploaded')
         else:
             logger.error('DeepSeekWebOCR: No file input found!')
 
@@ -186,7 +197,8 @@ class DeepSeekWebOCR:
         if textarea:
             await textarea.click()
             await asyncio.sleep(0.2)
-        await self.page.evaluate('''(text) => {
+        await self.page.evaluate(
+            """(text) => {
             const textarea = document.querySelector('textarea');
             if (textarea) {
                 const setter = Object.getOwnPropertyDescriptor(
@@ -198,7 +210,9 @@ class DeepSeekWebOCR:
                 return true;
             }
             return false;
-        }''', prompt)
+        }""",
+            prompt,
+        )
         await asyncio.sleep(0.3)
         await self.page.focus('textarea')
         await asyncio.sleep(0.1)
@@ -206,7 +220,7 @@ class DeepSeekWebOCR:
         await self.page.keyboard.press('Enter')
 
     async def _get_page_text(self) -> str:
-        return await self.page.evaluate('''() => {
+        return await self.page.evaluate("""() => {
             const allElements = document.querySelectorAll('*');
             const responseTexts = [];
             let foundUserMsg = false;
@@ -238,7 +252,7 @@ class DeepSeekWebOCR:
                 }
             }
             return responseTexts.join('\\n');
-        }''')
+        }""")
 
     async def _wait_for_response(self, max_wait: int = 300) -> str:
         start_time = time.time()
@@ -267,7 +281,9 @@ class DeepSeekWebOCR:
                     elif current_length == last_length and current_length > 20:
                         stable_count += 1
                         if stable_count >= 2:
-                            logger.debug(f'DeepSeekWebOCR: Response stable after {elapsed:.1f}s, {current_length} chars')
+                            logger.debug(
+                                f'DeepSeekWebOCR: Response stable after {elapsed:.1f}s, {current_length} chars'
+                            )
                             return current_text
 
                 if 'null' in current_text.lower():
@@ -281,11 +297,11 @@ class DeepSeekWebOCR:
 
             except Exception as e:
                 if 'Target closed' in str(e) or 'Page closed' in str(e):
-                    return current_text if current_text else ""
+                    return current_text if current_text else ''
                 await asyncio.sleep(0.5)
 
         logger.warning(f'DeepSeekWebOCR: Timeout after {max_wait}s, {len(current_text)} chars')
-        return current_text if current_text else ""
+        return current_text if current_text else ''
 
     async def _ocr_segment(self, image: Image.Image) -> str:
         img = resize_to_max(image, 1000)
@@ -325,11 +341,11 @@ class DeepSeekWebOCR:
 
         results = []
         for i, img in enumerate(segments):
-            logger.info(f'DeepSeekWebOCR: Segment {i+1}/{len(segments)}')
+            logger.info(f'DeepSeekWebOCR: Segment {i + 1}/{len(segments)}')
             text = await self._ocr_segment(img)
             if _is_valid_response(text):
                 results.append(text)
-            logger.info(f'  Segment {i+1}: {len(text)} chars')
+            logger.info(f'  Segment {i + 1}: {len(text)} chars')
 
         final = deduplicate_texts(results)
         logger.info(f'DeepSeekWebOCR: Total {len(final)} chars')
@@ -359,7 +375,7 @@ class DeepSeekWebOCR:
 
         results = []
         for idx, (name, gif_bytes) in enumerate(gif_items):
-            logger.info(f'DeepSeekWebOCR: [{idx+1}/{len(gif_items)}] {name}')
+            logger.info(f'DeepSeekWebOCR: [{idx + 1}/{len(gif_items)}] {name}')
 
             if idx > 0:
                 await self._send_casual_message()
@@ -376,11 +392,11 @@ class DeepSeekWebOCR:
 
             texts = []
             for i, img in enumerate(segments):
-                logger.info(f'  Segment {i+1}/{len(segments)}')
+                logger.info(f'  Segment {i + 1}/{len(segments)}')
                 text = await self._ocr_segment(img)
                 if _is_valid_response(text):
                     texts.append(text)
-                logger.info(f'  Segment {i+1}: {len(text)} chars')
+                logger.info(f'  Segment {i + 1}: {len(text)} chars')
 
             final = deduplicate_texts(texts)
             results.append((name, final))

@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
+
+from bs4 import BeautifulSoup, ResultSet, Tag
 from loguru import logger
-from bs4 import BeautifulSoup, Tag, ResultSet
+
 from .config import SELECTORS_PATH
 
 
@@ -45,7 +47,7 @@ class Selectors:
     def reload(self):
         """Reload selectors from JSON file."""
         try:
-            with open(self._path, 'r', encoding='utf-8') as f:
+            with open(self._path, encoding='utf-8') as f:
                 self._data = json.load(f)
         except FileNotFoundError:
             logger.error(f'Selectors file not found: {self._path}')
@@ -79,8 +81,11 @@ class Selectors:
 
         if result is None and required:
             raise SelectorError(
-                page=page, field=field, selector=selector,
-                url=url, description=config.get('description', ''),
+                page=page,
+                field=field,
+                selector=selector,
+                url=url,
+                description=config.get('description', ''),
             )
         return result
 
@@ -99,8 +104,11 @@ class Selectors:
 
         if not results and required:
             raise SelectorError(
-                page=page, field=field, selector=selector,
-                url=url, description=config.get('description', ''),
+                page=page,
+                field=field,
+                selector=selector,
+                url=url,
+                description=config.get('description', ''),
             )
         return results
 
@@ -121,8 +129,11 @@ class Selectors:
         value = element.get(attr_name)
         if value is None and required:
             raise SelectorError(
-                page=page, field=field, selector=config['selector'],
-                url=url, description=f'{config.get("description", "")} (attribute "{attr_name}" missing)',
+                page=page,
+                field=field,
+                selector=config['selector'],
+                url=url,
+                description=f'{config.get("description", "")} (attribute "{attr_name}" missing)',
             )
         return value
 

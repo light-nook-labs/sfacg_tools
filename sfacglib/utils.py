@@ -1,11 +1,14 @@
 import re
-from typing import Callable, TypeVar
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
-from tqdm import tqdm
+from typing import TypeVar
+
 from bs4 import Tag
 from loguru import logger
 from PIL import Image
+from tqdm import tqdm
+
 from .config import MOBILE_BASE
 
 T = TypeVar('T')

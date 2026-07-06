@@ -1,12 +1,13 @@
-import customtkinter as ctk
 from threading import Thread
+
+import customtkinter as ctk
+
 from sfacglib.comic import Comic
 from sfacglib.fetcher import Fetcher
 from sfacglib.progress import ProgressTracker
 
 
 class ComicTab(ctk.CTkFrame):
-
     def __init__(self, master):
         super().__init__(master)
 

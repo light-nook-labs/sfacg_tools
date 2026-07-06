@@ -1,13 +1,15 @@
 import re
+from pathlib import Path
+from urllib.parse import urlparse
+from uuid import uuid4
+
+from bs4 import BeautifulSoup, Tag
 from ebooklib import epub
 from ebooklib.epub import EpubHtml
-from bs4 import BeautifulSoup, Tag
-from uuid import uuid4
-from pathlib import Path
 from loguru import logger
-from urllib.parse import urlparse
-from .fetcher import Fetcher
+
 from .config import WORKERS_EPUB_IMG
+from .fetcher import Fetcher
 from .utils import run_tasks
 
 _MEDIA_TYPES = {
@@ -66,17 +68,20 @@ def _process_images(
         fname = f'image_{str(uuid4())[:8]}'
         media_type = _detect_media_type(url)
         ext = media_type.split('/')[-1].replace('jpeg', 'jpg')
-        book.add_item(epub.EpubImage(
-            uid=str(uuid4()),
-            file_name=f'images/{fname}.{ext}',
-            media_type=media_type,
-            content=results[url],
-        ))
+        book.add_item(
+            epub.EpubImage(
+                uid=str(uuid4()),
+                file_name=f'images/{fname}.{ext}',
+                media_type=media_type,
+                content=results[url],
+            )
+        )
         img['src'] = f'images/{fname}.{ext}'
 
 
 def _md_to_html(md_text: str) -> str:
     from html import escape
+
     lines = md_text.split('\n')
     html_lines = []
     in_list = False
@@ -225,6 +230,7 @@ def download_epub(
     book.spine = spine
 
     from .utils import sanitize_filename
+
     safe_title = sanitize_filename(title)
     epub_path = path / f'{safe_title}.epub'
     try:
@@ -330,6 +336,7 @@ def convert_md_to_epub(
     book.spine = spine
 
     from .utils import sanitize_filename
+
     safe_title = sanitize_filename(title)
     epub_path = path / f'{safe_title}.epub'
     try:

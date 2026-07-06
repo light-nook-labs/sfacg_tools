@@ -1,9 +1,9 @@
 import customtkinter as ctk
+
 from sfacglib.fetcher import Fetcher
 
 
 class SettingsTab(ctk.CTkFrame):
-
     def __init__(self, master):
         super().__init__(master)
 
@@ -17,7 +17,9 @@ class SettingsTab(ctk.CTkFrame):
         frame.grid(row=0, column=0, sticky='ew', pady=(0, 10))
         frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(frame, text='Cookie', font=ctk.CTkFont(size=14, weight='bold')).grid(row=0, column=0, padx=10, pady=5, sticky='w')
+        ctk.CTkLabel(frame, text='Cookie', font=ctk.CTkFont(size=14, weight='bold')).grid(
+            row=0, column=0, padx=10, pady=5, sticky='w'
+        )
 
         self.cookie_text = ctk.CTkTextbox(frame, height=100)
         self.cookie_text.grid(row=1, column=0, sticky='ew', padx=10, pady=5)
@@ -35,11 +37,15 @@ class SettingsTab(ctk.CTkFrame):
         frame = ctk.CTkFrame(self)
         frame.grid(row=1, column=0, sticky='ew', pady=(0, 10))
 
-        ctk.CTkLabel(frame, text='外观', font=ctk.CTkFont(size=14, weight='bold')).grid(row=0, column=0, padx=10, pady=5, sticky='w')
+        ctk.CTkLabel(frame, text='外观', font=ctk.CTkFont(size=14, weight='bold')).grid(
+            row=0, column=0, padx=10, pady=5, sticky='w'
+        )
 
         ctk.CTkLabel(frame, text='主题:').grid(row=1, column=0, padx=10, pady=5, sticky='w')
         self.theme_var = ctk.StringVar(value='dark')
-        self.theme_menu = ctk.CTkOptionMenu(frame, variable=self.theme_var, values=['dark', 'light', 'system'], command=self._change_theme)
+        self.theme_menu = ctk.CTkOptionMenu(
+            frame, variable=self.theme_var, values=['dark', 'light', 'system'], command=self._change_theme
+        )
         self.theme_menu.grid(row=1, column=1, padx=10, pady=5, sticky='w')
 
     def _import_cookie(self):

@@ -1,9 +1,10 @@
 import json
-import subprocess
 from pathlib import Path
-from openai import OpenAI
+
 from loguru import logger
-from .config import settings, CHATBOT_MAX_FILE_SIZE, CORRECT_OCR_SYSTEM_PROMPT
+from openai import OpenAI
+
+from .config import CHATBOT_MAX_FILE_SIZE, CORRECT_OCR_SYSTEM_PROMPT, settings
 
 AGENT_SYSTEM_PROMPT = """你是 SFACG Spider 的智能助手，可以通过自然语言帮助用户完成任务。
 
@@ -99,7 +100,10 @@ TOOLS = [
                 'type': 'object',
                 'properties': {
                     'input_path': {'type': 'string', 'description': 'Path to the GIF file'},
-                    'output_path': {'type': 'string', 'description': 'Output text file path (default: same name with .txt)'},
+                    'output_path': {
+                        'type': 'string',
+                        'description': 'Output text file path (default: same name with .txt)',
+                    },
                 },
                 'required': ['input_path'],
             },
@@ -186,7 +190,6 @@ TOOLS = [
 
 
 class ChatBot:
-
     def __init__(
         self,
         base_url: str = '',
@@ -238,11 +241,13 @@ class ChatBot:
                 logger.info(f'Tool call: {tc.function.name}({args})')
                 result = self._exec_tool(tc.function.name, args)
                 logger.info(f'Tool result: {result[:200]}...' if len(result) > 200 else f'Tool result: {result}')
-                self.messages.append({
-                    'role': 'tool',
-                    'tool_call_id': tc.id,
-                    'content': result,
-                })
+                self.messages.append(
+                    {
+                        'role': 'tool',
+                        'tool_call_id': tc.id,
+                        'content': result,
+                    }
+                )
 
         return '[达到最大对话轮数]'
 
@@ -261,13 +266,17 @@ class ChatBot:
             elif name == 'correct_ocr_text':
                 return self._tool_correct_ocr(args['text'], args.get('context', ''))
             elif name == 'correct_ocr_file':
-                return self._tool_correct_ocr_file(args['input_path'], args.get('output_path', ''), args.get('context', ''))
+                return self._tool_correct_ocr_file(
+                    args['input_path'], args.get('output_path', ''), args.get('context', '')
+                )
             elif name == 'batch_remove_pinyin':
                 return self._tool_batch_remove_pinyin(args['dir_path'], args.get('pattern', '*.gif'))
             elif name == 'batch_ocr':
                 return self._tool_batch_ocr(args['dir_path'], args.get('pattern', '*.gif'))
             elif name == 'batch_correct_ocr':
-                return self._tool_batch_correct_ocr(args['dir_path'], args.get('pattern', '*.txt'), args.get('context', ''))
+                return self._tool_batch_correct_ocr(
+                    args['dir_path'], args.get('pattern', '*.txt'), args.get('context', '')
+                )
             else:
                 return f'Unknown tool: {name}'
         except Exception as e:
@@ -320,6 +329,7 @@ class ChatBot:
 
     def _tool_remove_pinyin(self, input_path: str, output_path: str = '') -> str:
         from .ocr_fast import remove_pinyin_gif
+
         try:
             p = self._validate_path(input_path)
         except ValueError as e:
@@ -336,8 +346,9 @@ class ChatBot:
         return f'Done: {out} ({img.width}x{img.height})'
 
     def _tool_ocr_gif(self, input_path: str, output_path: str = '') -> str:
-        from .ocr_fast import ocr_gif
         from .nlp import merge_wrapped_lines
+        from .ocr_fast import ocr_gif
+
         try:
             p = self._validate_path(input_path)
         except ValueError as e:
@@ -449,7 +460,7 @@ class ChatBot:
             return
         system = self.messages[0]
         overflow = len(self.messages) - self.max_messages
-        self.messages = [system] + self.messages[1 + overflow:]
+        self.messages = [system] + self.messages[1 + overflow :]
 
 
 def interactive_chat(base_url: str = '', api_key: str = '', model: str = ''):

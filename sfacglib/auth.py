@@ -1,11 +1,14 @@
 import json
 import os
-from pathlib import Path
-from loguru import logger
-import requests
-from .config import COOKIE_PATH, URL_CHECK_AUTH, COOKIE_DOMAIN
 
-_DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+import requests
+from loguru import logger
+
+from .config import COOKIE_DOMAIN, COOKIE_PATH
+
+_DEFAULT_UA = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+)
 
 
 class Auth:
@@ -106,6 +109,7 @@ class Auth:
         if resp.status_code == 200 and 'login:"true"' in resp.text:
             # Extract nickname from response
             import re
+
             nickname_match = re.search(r'nickname:"([^"]+)"', resp.text)
             if nickname_match:
                 self.username = nickname_match.group(1)

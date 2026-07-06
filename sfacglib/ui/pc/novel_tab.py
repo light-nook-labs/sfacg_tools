@@ -1,12 +1,13 @@
-import customtkinter as ctk
 from threading import Thread
-from sfacglib.novel import Novel
+
+import customtkinter as ctk
+
 from sfacglib.fetcher import Fetcher
+from sfacglib.novel import Novel
 from sfacglib.progress import ProgressTracker
 
 
 class NovelTab(ctk.CTkFrame):
-
     def __init__(self, master):
         super().__init__(master)
 
@@ -65,6 +66,7 @@ class NovelTab(ctk.CTkFrame):
         try:
             nid_text = self.nid_entry.get().strip()
             import re
+
             match = re.search(r'(\d+)', nid_text)
             if not match:
                 self._log('错误: 无法提取小说ID')

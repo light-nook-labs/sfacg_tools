@@ -1,14 +1,16 @@
 import threading
-from pathlib import Path
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
+from pathlib import Path
+
 from loguru import logger
-from .fetcher import Fetcher
+from tqdm import tqdm
+
 from .config import WORKERS_CHAPTER
+from .fetcher import Fetcher
+from .models import Catalog, CatalogItem, CatalogSection
 from .progress import ProgressTracker, _extract_id
 from .utils import sanitize_filename as _sanitize_filename
-from .models import Catalog, CatalogSection, CatalogItem
 
 
 class AntiScrapingError(Exception):
@@ -16,48 +18,41 @@ class AntiScrapingError(Exception):
 
 
 class Item(ABC):
-
     def __init__(self, idx: int, title: str, url: str):
         self.idx = idx
         self.title = title
         self.url = url
 
     @abstractmethod
-    def download(self, save_path: Path, pbar=None, lock=None):
-        ...
+    def download(self, save_path: Path, pbar=None, lock=None): ...
 
     def to_dict(self) -> dict:
         return {'idx': self.idx, 'title': self.title, 'url': self.url}
 
 
 class Section(ABC):
-
     def __init__(self, idx: int, title: str):
         self.idx = idx
         self.title = title
 
     @abstractmethod
-    def get_items(self) -> list[Item]:
-        ...
+    def get_items(self) -> list[Item]: ...
 
     def to_dict(self) -> dict:
         return {'idx': self.idx, 'title': self.title}
 
 
 class Container(ABC):
-
     def __init__(self, fetcher: Fetcher | None = None):
         self.fetcher = fetcher or Fetcher()
         self.title: str = ''
         self.id: str = ''
 
     @abstractmethod
-    def get_info(self) -> tuple[str, str]:
-        ...
+    def get_info(self) -> tuple[str, str]: ...
 
     @abstractmethod
-    def get_sections(self) -> list[Section]:
-        ...
+    def get_sections(self) -> list[Section]: ...
 
     def _filter_items(
         self,
@@ -213,12 +208,14 @@ class Container(ABC):
                             dir=save_path.parent.name,
                             items=[],
                         )
-                    section_map[section.idx].items.append(CatalogItem(
-                        idx=item.idx,
-                        title=item.title,
-                        url=item.url,
-                        file=str(save_path.relative_to(dir_path)),
-                    ))
+                    section_map[section.idx].items.append(
+                        CatalogItem(
+                            idx=item.idx,
+                            title=item.title,
+                            url=item.url,
+                            file=str(save_path.relative_to(dir_path)),
+                        )
+                    )
                 except AntiScrapingError as e:
                     logger.error(f'反爬检测，停止所有下载: {e}')
                     anti_scraping = e
@@ -239,7 +236,9 @@ class Container(ABC):
 
             if anti_scraping:
                 if section_map:
-                    logger.warning(f'反爬检测，已下载 {sum(len(s.items) for s in section_map.values())} 项，保存部分结果')
+                    logger.warning(
+                        f'反爬检测，已下载 {sum(len(s.items) for s in section_map.values())} 项，保存部分结果'
+                    )
                 raise anti_scraping
 
         return sorted(section_map.values(), key=lambda s: s.idx)
@@ -268,9 +267,11 @@ class Container(ABC):
         logger.bind(force=True).info(f'共 {len(all_items)} 项待下载')
 
         item_list = [{'url': i.url, 'title': i.title} for _, i in all_items]
-        task_id = tracker.create_task(
-            self.__class__.__name__.lower(), self.title, self.id, '', chapters=item_list
-        ) if tracker else None
+        task_id = (
+            tracker.create_task(self.__class__.__name__.lower(), self.title, self.id, '', chapters=item_list)
+            if tracker
+            else None
+        )
 
         dir_path = path / _sanitize_filename(self.title)
         dir_path.mkdir(parents=True, exist_ok=True)
@@ -287,8 +288,13 @@ class Container(ABC):
         )
 
         catalog.sections = self._download_items(
-            all_items, dir_path, ext,
-            pbar=pbar, lock=lock, tracker=tracker, task_id=task_id,
+            all_items,
+            dir_path,
+            ext,
+            pbar=pbar,
+            lock=lock,
+            tracker=tracker,
+            task_id=task_id,
         )
 
         pbar.close()
@@ -338,6 +344,3 @@ class Container(ABC):
             parts.append('</body></html>')
 
         return '\n\n'.join(parts) if ext != 'html' else '\n'.join(parts)
-
-
-

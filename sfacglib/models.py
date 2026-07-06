@@ -1,7 +1,9 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field
-from pathlib import Path
+
 import json
+from pathlib import Path
+
+from pydantic import BaseModel
 
 
 class SearchItem(BaseModel):
@@ -65,12 +67,14 @@ class Catalog(BaseModel):
                     dir='',
                     items=[],
                 )
-            sections_map[sec_idx].items.append(CatalogItem(
-                idx=item.get('item_idx', 0),
-                title=item.get('item_title', ''),
-                url=item.get('item_url', ''),
-                file=item.get('file', ''),
-            ))
+            sections_map[sec_idx].items.append(
+                CatalogItem(
+                    idx=item.get('item_idx', 0),
+                    title=item.get('item_title', ''),
+                    url=item.get('item_url', ''),
+                    file=item.get('file', ''),
+                )
+            )
 
         sections = sorted(sections_map.values(), key=lambda s: s.idx)
 
@@ -85,7 +89,7 @@ class Catalog(BaseModel):
 
     def save(self, path) -> None:
         from pathlib import Path
-        import json
+
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(

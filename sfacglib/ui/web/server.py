@@ -1,19 +1,18 @@
-import os
-import re
 import json
+import re
 import time
 from pathlib import Path
 from threading import Thread
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-import uvicorn
 
-from sfacglib.novel import Novel
-from sfacglib.comic import Comic
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+
 from sfacglib.audio import Audio
+from sfacglib.comic import Comic
 from sfacglib.fetcher import Fetcher
+from sfacglib.novel import Novel
 from sfacglib.progress import ProgressTracker
 
 DEFAULT_DOWNLOAD = Path.home() / 'Download'
@@ -183,13 +182,15 @@ async def list_library(path: str = str(DEFAULT_DOWNLOAD)):
             if catalog.exists():
                 try:
                     meta = json.loads(catalog.read_text(encoding='utf-8'))
-                    items.append({
-                        'name': item.name,
-                        'path': str(item),
-                        'title': meta.get('title', item.name),
-                        'type': 'novel' if 'nid' in meta else 'comic',
-                        'has_chapters': 'chapters' in meta or 'items' in meta,
-                    })
+                    items.append(
+                        {
+                            'name': item.name,
+                            'path': str(item),
+                            'title': meta.get('title', item.name),
+                            'type': 'novel' if 'nid' in meta else 'comic',
+                            'has_chapters': 'chapters' in meta or 'items' in meta,
+                        }
+                    )
                 except:
                     items.append({'name': item.name, 'path': str(item), 'title': item.name, 'type': 'unknown'})
     return items
@@ -211,11 +212,13 @@ async def read_novel(path: str):
         ch_path = dir_path / ch['file']
         if ch_path.exists():
             content = ch_path.read_text(encoding='utf-8')
-            chapters.append({
-                'title': ch.get('item_title', ch.get('ch_title', '')),
-                'section': ch.get('section_title', ch.get('vol_title', '')),
-                'content': content,
-            })
+            chapters.append(
+                {
+                    'title': ch.get('item_title', ch.get('ch_title', '')),
+                    'section': ch.get('section_title', ch.get('vol_title', '')),
+                    'content': content,
+                }
+            )
 
     return {
         'title': catalog.get('title', ''),
@@ -239,11 +242,13 @@ async def read_comic(path: str):
     for item in catalog.get(items_key, []):
         img_path = dir_path / item['file']
         if img_path.exists():
-            pages.append({
-                'title': item.get('item_title', ''),
-                'section': item.get('section_title', ''),
-                'url': f'/api/file/{img_path}',
-            })
+            pages.append(
+                {
+                    'title': item.get('item_title', ''),
+                    'section': item.get('section_title', ''),
+                    'url': f'/api/file/{img_path}',
+                }
+            )
 
     return {
         'title': catalog.get('title', ''),
@@ -262,6 +267,7 @@ async def serve_file(path: str):
 def run_web(host='127.0.0.1', port=8888, open_browser=True):
     if open_browser:
         import webbrowser
+
         Thread(target=lambda: (time.sleep(1), webbrowser.open(f'http://{host}:{port}')), daemon=True).start()
 
     print(f'SFACG Web UI: http://{host}:{port}')
