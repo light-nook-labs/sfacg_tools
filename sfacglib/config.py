@@ -79,7 +79,7 @@ URL_LOGIN_API_PC = f'{PASSPORT_BASE}/Ajax/QuickLogin.ashx'
 URL_LOGIN_API_MOB = f'{PASSPORT_BASE}/Ajax/QuickLoginCross.ashx'
 URL_CHECK_AUTH = f'{PC_BASE}/'
 
-SELECTORS_PATH: Path = PACKAGE_DIR / 'selectors.json'
+SELECTORS_PATH: Path = PACKAGE_DIR / 'selectors.toml'
 COOKIE_PATH: Path = _CONFIG_DIR / '.cookies.json'
 AUDIOBOOKS_JSON: Path = PACKAGE_DIR / 'audiobooks.json'
 

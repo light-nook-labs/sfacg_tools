@@ -1,10 +1,18 @@
-import json
+import sys
 from pathlib import Path
 
 from bs4 import BeautifulSoup, ResultSet, Tag
 from loguru import logger
 
 from .config import SELECTORS_PATH
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib  # type: ignore[no-redef]
 
 
 class SelectorError(Exception):
@@ -27,7 +35,7 @@ class SelectorError(Exception):
         msg += (
             f'\n  The page structure may have changed.'
             f'\n  Use chrome-devtools-mcp to navigate to the page and find the correct selector.'
-            f'\n  Then update sfacglib/selectors.json -> "{self.page}" -> "{self.field}"'
+            f'\n  Then update sfacglib/selectors.toml -> "{self.page}" -> "{self.field}"'
         )
         return msg
 
@@ -35,7 +43,7 @@ class SelectorError(Exception):
 class Selectors:
     """Centralized CSS selector registry.
 
-    Loads selectors from selectors.json and provides methods to find elements
+    Loads selectors from selectors.toml and provides methods to find elements
     with automatic error reporting when selectors break.
     """
 
@@ -45,15 +53,15 @@ class Selectors:
         self.reload()
 
     def reload(self):
-        """Reload selectors from JSON file."""
+        """Reload selectors from TOML file."""
         try:
-            with open(self._path, encoding='utf-8') as f:
-                self._data = json.load(f)
+            with open(self._path, 'rb') as f:
+                self._data = tomllib.load(f)
         except FileNotFoundError:
             logger.error(f'Selectors file not found: {self._path}')
             self._data = {}
-        except json.JSONDecodeError as e:
-            logger.error(f'Selectors JSON parse error: {self._path}: {e}')
+        except Exception as e:
+            logger.error(f'Selectors TOML parse error: {self._path}: {e}')
             raise
 
     def get_selector(self, page: str, field: str) -> dict:

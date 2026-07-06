@@ -1,0 +1,199 @@
+# CSS selectors for SFACG pages.
+# When selectors break, use chrome-devtools-mcp to navigate to the page
+# and verify the correct selector.
+
+[meta]
+version = "1.0"
+last_verified = "2026-06-19"
+description = "CSS selectors for SFACG pages. When selectors break, use chrome-devtools-mcp to navigate to the page and verify the correct selector."
+
+[novel_info.container]
+selector = ".book_info"
+description = "Novel info container on mobile novel page"
+
+[novel_info.title]
+selector = ".book_info span"
+description = "Novel title text"
+
+[novel_info.cover]
+selector = ".book_info img"
+attr = "src"
+description = "Cover image URL"
+
+[novel_info.labels]
+selector = ".book_info div"
+description = "Novel labels/tags container"
+
+[novel_info.stats]
+selector = ".book_info3"
+description = "Author, word count, click count (slash-separated)"
+
+[novel_info.counts]
+selector = "small"
+description = "Heart count, praise count, etc."
+
+[novel_info.introduction]
+selector = ".book_bk_qs1"
+description = "Novel introduction/synopsis"
+
+[novel_menu.volume_tags]
+selector = ".mulu"
+description = "Volume section headers on mobile menu page"
+
+[novel_menu.volume_title]
+description = "Volume title (the tag's string content, no selector needed)"
+
+[novel_menu.chapter_links]
+selector = "ul a"
+description = "Chapter links within a volume (mobile)"
+
+[novel_menu.vip_badge]
+selector = ".icn_vip"
+description = "VIP badge span inside chapter link"
+
+[novel_pc_index.volume_headers]
+selector = ".catalog-hd"
+description = "Volume header containers on PC index page"
+
+[novel_pc_index.volume_title]
+selector = ".catalog-title"
+description = "Volume title text"
+
+[novel_pc_index.chapter_list]
+selector = ".catalog-list"
+description = "Chapter list divs after volume header"
+
+[novel_pc_index.vip_badge]
+selector = ".icn_vip"
+description = "VIP badge span indicating paid chapter"
+
+[chapter_mobile.title]
+selector = "title"
+description = "Page title, format: 'xxx - 章节名 - SF轻小说手机版'"
+
+[chapter_mobile.content_container]
+selector = "div > div"
+description = "Main content container (first div > div on page)"
+
+[chapter_mobile.paragraphs]
+selector = "p"
+description = "Text paragraphs"
+
+[chapter_mobile.images]
+selector = "img"
+attr = "src"
+description = "Inline images in chapter content"
+
+[chapter_pc.header]
+selector = ".article-hd"
+description = "Chapter header container"
+
+[chapter_pc.title]
+selector = ".article-hd h1"
+description = "Chapter title"
+
+[chapter_pc.meta_info]
+selector = ".article-hd .text"
+description = "Chapter metadata (word count, update time, etc.)"
+
+[chapter_pc.content]
+selector = "#ChapterBody"
+description = "Chapter body content"
+
+[chapter_vip.header]
+selector = ".article-hd"
+description = "VIP chapter header container"
+
+[chapter_vip.title]
+selector = ".article-hd .article-title"
+description = "VIP chapter title"
+
+[chapter_vip.meta_info]
+selector = ".article-hd .text"
+description = "VIP chapter metadata"
+
+[chapter_vip.content]
+selector = "#ChapterBody"
+description = "VIP chapter body (may contain truncated text or be empty)"
+
+[chapter_vip.vip_image]
+selector = "#vipImage"
+attr = "src"
+description = "VIP content rendered as GIF image (anti-scraping)"
+
+[chapter_vip.is_vip_script]
+selector = "script"
+description = "Script tags, look for 'isVip = true' to detect VIP chapters"
+
+[comic_info.container]
+selector = ".synopsises_font"
+description = "Comic info container"
+
+[comic_info.title]
+selector = ".synopsises_font span:first-child"
+description = "Comic title"
+
+[comic_info.cover]
+selector = ".synopsises_font .cover img"
+attr = "src"
+description = "Comic cover image"
+
+[comic_info.labels]
+selector = ".synopsises_font"
+description = "Comic tags/labels (parse from text)"
+
+[comic_info.stats]
+selector = ".synopsises_font"
+description = "Comic stats (parse from text)"
+
+[comic_info.interactions]
+selector = ".interaction_Focus"
+description = "Favorites, likes, etc."
+
+[comic_info.description]
+selector = ".synopsises_font"
+description = "Comic description/synopsis (first paragraph)"
+
+[comic_info.chapter_list]
+selector = ".comic_Serial_list a"
+description = "Comic chapter links"
+
+[comic_chapter.scripts]
+selector = "script"
+description = "Script tags containing comicId, nv, chapterId variables"
+
+[audio_page.title]
+selector = "title"
+description = "Page title, format: 'xxx音频列表 - SF轻小说手机版'"
+
+[audio_page.volume_tags]
+selector = ".mulu"
+description = "Volume section headers"
+
+[audio_page.chapter_links]
+selector = "ul a"
+description = "Audio chapter links within a volume"
+
+[audio_page.chapter_title]
+selector = "li"
+description = "Audio chapter title within a link"
+
+[review_detail.title]
+selector = "title"
+description = "Page title, suffix: '-书评详情-SF轻小说手机版'"
+
+[review_detail.content]
+selector = "p"
+description = "Review content (first <p> on page)"
+
+[review_detail.date_container]
+selector = "div span"
+description = "Date container (format: 'xxx 2024-01-01 12:00')"
+
+[review_detail.interactions]
+selector = ".shuping_hudong.book_bk_qs1"
+description = "Reply count and praise count"
+
+[review_list.title]
+selector = "title"
+description = "Page title, suffix: '小说书评列表-SF轻小说手机版'"
