@@ -11,6 +11,9 @@ class CatalogItem(BaseModel):
     title: str
     url: str = ''
     file: str = ''
+    status: str = 'pending'  # pending | done | failed
+    vip_mode: str = ''  # '' | 'encrypted' | 'image'
+    error: str = ''
 
 
 class CatalogSection(BaseModel):
@@ -91,3 +94,56 @@ class Catalog(BaseModel):
             for item in section.items:
                 result.append((section, item))
         return result
+
+    @classmethod
+    def from_sections(
+        cls,
+        id: str,
+        title: str,
+        sections: list,
+        author: str = '',
+        cover: str = '',
+        intro: str = '',
+        ext: str = 'md',
+        item_prefix: str = 'item',
+    ) -> Catalog:
+        """Build catalog from Section objects before download starts."""
+        from ..utils import sanitize_filename
+
+        catalog_sections: list[CatalogSection] = []
+        for section in sections:
+            safe_section = sanitize_filename(section.title)
+            dir_name = f'sec_{section.idx:03d}_{safe_section}'
+            catalog_items: list[CatalogItem] = []
+            for item in section.get_items():
+                safe_title = sanitize_filename(item.title)
+                if safe_title:
+                    filename = f'{item_prefix}_{item.idx:03d}_{safe_title}.{ext}'
+                else:
+                    filename = f'{item_prefix}_{item.idx:03d}.{ext}'
+                catalog_items.append(
+                    CatalogItem(
+                        idx=item.idx,
+                        title=item.title,
+                        url=item.url,
+                        file=f'{dir_name}/{filename}',
+                        status='pending',
+                        vip_mode=getattr(item, 'vip_mode', ''),
+                    )
+                )
+            catalog_sections.append(
+                CatalogSection(
+                    idx=section.idx,
+                    title=section.title,
+                    dir=dir_name,
+                    items=catalog_items,
+                )
+            )
+        return cls(
+            id=id,
+            title=title,
+            author=author,
+            cover=cover,
+            intro=intro,
+            sections=catalog_sections,
+        )

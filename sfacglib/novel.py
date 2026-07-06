@@ -163,19 +163,21 @@ class NovelChapter(Item):
         fetcher: Fetcher | None = None,
         sel: Selectors | None = None,
         nid: str = '',
-        vip: bool = False,
+        vip_mode: str = '',
     ):
         super().__init__(idx, title, url)
         self.fetcher = fetcher or Fetcher()
         self.sel = sel or Selectors()
         self.nid = nid
-        self.vip = vip
+        self.vip_mode = vip_mode
 
     def download(self, save_path: Path, pbar=None, lock=None):
         if save_path.exists() or save_path.with_suffix('.gif').exists():
             logger.debug(f'Skip existing: {save_path.name}')
-        elif self.vip:
+        elif self.vip_mode == 'encrypted':
             self._download_vip_gif(save_path)
+        elif self.vip_mode == 'image':
+            self._download_normal(save_path)
         else:
             self._download_normal(save_path)
         if pbar and lock:
@@ -473,6 +475,13 @@ def _parse_pc_catalog(soup: BeautifulSoup, fetcher: Fetcher, sel: Selectors, nid
                 has_img = a.select_one('.icn') and a.select_one('.icn').get_text() == ICN_IMG
                 title = a.get('title', '') or a.get_text().replace('VIP', '').strip()
 
+                if is_vip and has_img:
+                    vip_mode = 'image'
+                elif is_vip:
+                    vip_mode = 'encrypted'
+                else:
+                    vip_mode = ''
+
                 if href.startswith('/'):
                     url = f'{PC_BASE}{href}'
                 else:
@@ -486,7 +495,7 @@ def _parse_pc_catalog(soup: BeautifulSoup, fetcher: Fetcher, sel: Selectors, nid
                         fetcher,
                         sel,
                         nid=nid,
-                        vip=is_vip and not has_img,
+                        vip_mode=vip_mode,
                     )
                 )
 
