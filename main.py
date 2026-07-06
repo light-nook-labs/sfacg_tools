@@ -100,10 +100,10 @@ def cmd_audio(args):
     audio.download(
         path=args.output,
         tracker=tracker,
-        start_chapter=args.start_chapter,
-        end_chapter=args.end_chapter,
-        chapter_range=args.chapters,
-        volume_filter=args.volumes,
+        start=args.start_chapter,
+        end=args.end_chapter,
+        range_str=args.chapters,
+        filter_str=args.volumes,
     )
     tracker.close()
     logger.bind(force=True).info(f'Done: {audio.title}')

@@ -160,10 +160,6 @@ class Comic(Container):
         super().__init__(fetcher)
         self.url = url
         self.id = self._extract_id(url)
-        self.title: str = ''
-        self.author: str = ''
-        self.intro: str = ''
-        self.cover: str = ''
         self.sel = selectors or Selectors()
 
     @staticmethod
@@ -292,6 +288,9 @@ class Comic(Container):
                 ch_url = f'{COMIC_READER_BASE}{href}'
                 chapters.append(ComicChapter(ch_idx, ch_title, ch_url, self.fetcher, self.sel))
         return chapters
+
+    def _download_item(self, item: 'ComicPage', save_path: Path, pbar=None, lock=None):
+        item.download(save_path, pbar, lock)
 
     def download(
         self,
