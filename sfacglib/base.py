@@ -266,6 +266,7 @@ class Container(ABC):
                 ci = item_lookup.get((section.idx, item.idx))
                 if ci and ci.file:
                     save_path = dir_path / ci.file
+                    save_path.parent.mkdir(parents=True, exist_ok=True)
                 else:
                     safe_section = _sanitize_filename(section.title)
                     section_dir = dir_path / f'sec_{section.idx:03d}_{safe_section}'
