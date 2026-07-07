@@ -48,33 +48,54 @@ class Section(ABC):
         item_prefix: str = 'item',
         pbar=None,
         lock=None,
+        executor: ThreadPoolExecutor | None = None,
+        tracker: ProgressTracker | None = None,
+        task_id: str = '',
     ) -> CatalogSection:
         section_dir = dir_path / f'sec_{self.idx:03d}_{_sanitize_filename(self.title)}'
         section_dir.mkdir(parents=True, exist_ok=True)
 
-        catalog_items: list[CatalogItem] = []
-        for item in self.get_items():
+        items = self.get_items()
+
+        def _download_one(item):
             safe_title = _sanitize_filename(item.title)
             if safe_title:
                 filename = f'{item_prefix}_{item.idx:03d}_{safe_title}.{ext}'
             else:
-                filename = f'{item_prefix}_{item.idx:03d}.{ext}'
+                filename = f'{item_prefix}_{item.idx:03d}.md'
             save_path = section_dir / filename
             try:
                 item.download(save_path, pbar, lock)
-                catalog_items.append(
-                    CatalogItem(
-                        idx=item.idx,
-                        title=item.title,
-                        url=item.url,
-                        file=str(save_path.relative_to(dir_path)),
-                    )
+                if tracker and task_id:
+                    tracker.mark_done(task_id, item.url, str(save_path.relative_to(dir_path)))
+                return CatalogItem(
+                    idx=item.idx,
+                    title=item.title,
+                    url=item.url,
+                    file=str(save_path.relative_to(dir_path)),
                 )
             except Exception as e:
                 logger.error(f'Failed: {item.title} - {e}')
+                if tracker and task_id:
+                    tracker.mark_failed(task_id, item.url, str(e))
                 if pbar and lock:
                     with lock:
                         pbar.update(1)
+                return None
+
+        if executor:
+            futures = {executor.submit(_download_one, item): item for item in items}
+            catalog_items = []
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    catalog_items.append(result)
+        else:
+            catalog_items = []
+            for item in items:
+                result = _download_one(item)
+                if result:
+                    catalog_items.append(result)
 
         return CatalogSection(
             idx=self.idx,
@@ -236,6 +257,7 @@ class Container(ABC):
         filter_str: str | None = None,
     ):
         sections = self.get_sections()
+        filtered_sections = self._filter_sections(sections, start, end, range_str, filter_str)
         all_items = self._filter_items(sections, start, end, range_str, filter_str)
 
         if not all_items:
@@ -243,7 +265,7 @@ class Container(ABC):
             return
 
         skip_count = 0
-        to_download: list[tuple[any, any]] = []
+        to_download: list[tuple[Section, Item]] = []
         for section, item in all_items:
             safe_section = _sanitize_filename(section.title)
             section_dir = self.dir_path / f'sec_{section.idx:03d}_{safe_section}'
@@ -283,44 +305,38 @@ class Container(ABC):
 
         logger.bind(force=True).info(f'共 {len(to_download)} 项待下载')
 
-        with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
-            futures = {}
-            for section, item in to_download:
-                safe_section = _sanitize_filename(section.title)
-                section_dir = self.dir_path / f'sec_{section.idx:03d}_{safe_section}'
-                section_dir.mkdir(exist_ok=True)
-                safe_title = _sanitize_filename(item.title)
-                if safe_title:
-                    filename = f'item_{item.idx:03d}_{safe_title}.md'
-                else:
-                    filename = f'item_{item.idx:03d}.md'
-                save_path = section_dir / filename
+        section_items: dict[int, list[Item]] = {}
+        for section, item in to_download:
+            section_items.setdefault(section.idx, []).append(item)
 
-                futures[executor.submit(self._download_item, item, save_path, pbar, lock)] = (
-                    section,
-                    item,
+        section_map = {s.idx: s for s in filtered_sections}
+
+        with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
+
+            def _download_section(sec_idx):
+                section = section_map[sec_idx]
+                section.download(
+                    self.dir_path,
+                    ext='md',
+                    pbar=pbar,
+                    lock=lock,
+                    executor=executor,
+                    tracker=self.tracker,
+                    task_id=task_id,
                 )
 
-            for future in as_completed(futures):
-                section, item = futures[future]
+            section_futures = {executor.submit(_download_section, idx): idx for idx in section_items}
+
+            for future in as_completed(section_futures):
                 try:
                     future.result()
-                    self.tracker.mark_done(task_id, item.url)
                 except AntiScrapingError as e:
                     logger.error(f'反爬检测，停止所有下载: {e}')
                     anti_scraping = e
-                    self.tracker.mark_failed(task_id, item.url, str(e))
-                    if pbar and lock:
-                        with lock:
-                            pbar.update(1)
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                 except Exception as e:
-                    logger.error(f'Failed: {item.title} - {e}')
-                    self.tracker.mark_failed(task_id, item.url, str(e))
-                    if pbar and lock:
-                        with lock:
-                            pbar.update(1)
+                    logger.error(f'Failed section: {e}')
 
         pbar.close()
 

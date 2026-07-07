@@ -125,7 +125,7 @@ novel._download_reviews(ext='md')           # optional: download reviews to revi
 
 ### Concurrency Model
 
-Flat thread pool — all items from all sections submitted to a single `ThreadPoolExecutor(max_workers=50)`. No nested pools.
+Hierarchical thread pool — `Container.download()` submits `section.download()` concurrently, each `section.download()` submits `item.download()` concurrently. All share a single `ThreadPoolExecutor(max_workers=50)`.
 
 ### Dual-Session Fetcher
 
