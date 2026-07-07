@@ -10,7 +10,6 @@ PROJECT_DIR = PACKAGE_DIR.parent
 DEFAULT_DOWNLOAD_DIR = Path.home() / 'Downloads'
 
 _CONFIG_DIR = Path.home() / '.config' / 'sfacg'
-_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 MOBILE_BASE = 'https://m.sfacg.com'
 PC_BASE = 'https://book.sfacg.com'
@@ -32,7 +31,7 @@ API_LOLOBUN = f'{LOLOBUN_BASE}/ajax/Common.ashx'
 
 VIP_IMAGE_WIDTH: int = 5000
 VIP_DELAY_RANGE: tuple[float, float] = (2.0, 5.0)
-VIP_RETRY_DELAYS: list[int] = [10, 20, 40]
+VIP_RETRY_DELAYS: tuple[int, ...] = (10, 20, 40)
 VIP_TIMEOUT: tuple[int, int] = (10, 20)
 
 OCR_STRIP_HEIGHT: int = 800
@@ -91,13 +90,19 @@ FALLBACK_SELECTORS: Path = PACKAGE_DIR / 'selectors.toml'
 FALLBACK_AUDIOBOOKS: Path = PACKAGE_DIR / 'audiobooks.json'
 
 
-def _migrate_config():
+_config_initialized = False
+
+
+def _ensure_config():
+    global _config_initialized
+    if _config_initialized:
+        return
+    _config_initialized = True
+    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     for src, dst in [(FALLBACK_SELECTORS, SELECTORS_PATH), (FALLBACK_AUDIOBOOKS, AUDIOBOOKS_JSON)]:
         if src.exists() and not dst.exists():
             shutil.copy2(src, dst)
 
-
-_migrate_config()
 
 DEFAULT_DELAY: float = 0.2
 MAX_RETRIES: int = 3

@@ -4,7 +4,7 @@ import tomllib
 from bs4 import BeautifulSoup, ResultSet, Tag
 from loguru import logger
 
-from .config import SELECTORS_PATH
+from .config import SELECTORS_PATH, _ensure_config
 
 
 class SelectorError(Exception):
@@ -40,6 +40,7 @@ class Selectors:
     """
 
     def __init__(self, path: str | Path | None = None):
+        _ensure_config()
         self._path = Path(path) if path else SELECTORS_PATH
         self._data: dict = {}
         self.reload()
@@ -135,6 +136,8 @@ class Selectors:
                 url=url,
                 description=f'{config.get("description", "")} (attribute "{attr_name}" missing)',
             )
+        if isinstance(value, list):
+            return ' '.join(value)
         return value
 
     def find_text(

@@ -1,5 +1,5 @@
 import random
-from threading import Lock
+from threading import Lock, Semaphore
 from time import sleep
 from urllib.parse import urlparse
 
@@ -15,7 +15,7 @@ class RateLimiter:
     """Per-domain rate limiter with optional concurrency limit.
 
     Allows up to `max_concurrent` simultaneous requests per domain.
-    When the limit is reached, threads block until a slot frees.
+    When the limit is reached, threads block on a Semaphore until a slot frees.
     After each request, waits `delay` seconds before allowing the next.
     """
 
@@ -23,8 +23,8 @@ class RateLimiter:
         self._delays: dict[str, float] = {}
         self._default_delay = default_delay
         self._max_concurrent = max_concurrent
-        self._active: dict[str, int] = {}
-        self._active_lock = Lock()
+        self._semaphores: dict[str, Semaphore] = {}
+        self._semaphore_lock = Lock()
         self._domain_locks: dict[str, Lock] = {}
         self._domain_lock_lock = Lock()
 
@@ -34,6 +34,12 @@ class RateLimiter:
                 self._domain_locks[domain] = Lock()
             return self._domain_locks[domain]
 
+    def _get_semaphore(self, domain: str) -> Semaphore:
+        with self._semaphore_lock:
+            if domain not in self._semaphores:
+                self._semaphores[domain] = Semaphore(self._max_concurrent)
+            return self._semaphores[domain]
+
     def set_delay(self, domain: str, delay: float):
         self._delays[domain] = delay
 
@@ -41,13 +47,8 @@ class RateLimiter:
         delay = self._delays.get(domain, self._default_delay)
 
         if self._max_concurrent > 0:
-            while True:
-                with self._active_lock:
-                    count = self._active.get(domain, 0)
-                    if count < self._max_concurrent:
-                        self._active[domain] = count + 1
-                        break
-                sleep(0.01)
+            sem = self._get_semaphore(domain)
+            sem.acquire()
 
         dlock = self._get_domain_lock(domain)
         with dlock:
@@ -56,9 +57,8 @@ class RateLimiter:
 
     def release(self, domain: str):
         if self._max_concurrent > 0:
-            with self._active_lock:
-                count = self._active.get(domain, 1)
-                self._active[domain] = max(0, count - 1)
+            sem = self._get_semaphore(domain)
+            sem.release()
 
 
 class Fetcher:
@@ -147,8 +147,9 @@ class Fetcher:
         return False
 
     def _get_headers(self) -> dict[str, str]:
+        ua = random.choice(USER_AGENTS) if self.rotate_ua else self._ua
         return {
-            'User-Agent': self._ua,
+            'User-Agent': ua,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',

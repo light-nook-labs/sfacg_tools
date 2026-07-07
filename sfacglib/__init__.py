@@ -7,7 +7,7 @@ _logger.remove()
 def _tqdm_sink(message):
     record = message.record
     if record['level'].no >= 30 or record['extra'].get('force'):
-        _tqdm.write(message, end='')
+        _tqdm.write(str(message), end='')
 
 
 _logger.add(_tqdm_sink, format='{time:HH:mm:ss} | {level: <8} | {message}')
@@ -51,7 +51,7 @@ from .config import (
     settings,
 )
 from .fetcher import Fetcher
-from .models import Catalog, CatalogItem, CatalogSection, SearchItem
+from .models import SearchItem
 from .novel import Novel, NovelChapter, Review
 from .ocr import (
     ChatBot,
@@ -64,7 +64,6 @@ from .ocr import (
     remove_pinyin_gif,
     remove_pinyin_to_bytes,
 )
-from .progress import ProgressTracker
 from .search import (
     NovelItem,
     get_author_works,
@@ -94,9 +93,6 @@ __all__ = [
     'AudioChapter',
     'AudioVolume',
     'Auth',
-    'Catalog',
-    'CatalogItem',
-    'CatalogSection',
     'ChatBot',
     'Comic',
     'ComicChapter',
@@ -106,7 +102,6 @@ __all__ = [
     'Novel',
     'NovelChapter',
     'NovelItem',
-    'ProgressTracker',
     'SearchItem',
     'Section',
     'SelectorError',

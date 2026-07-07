@@ -5,10 +5,9 @@ from pathlib import Path
 
 from loguru import logger
 
-from ..base import _sanitize_filename
 from ..fetcher import Fetcher
-from ..models import Catalog, CatalogItem
-from . import fix_url_protocol
+from . import fix_url_protocol, load_json
+from . import sanitize_filename as _sanitize_filename
 from .epub import _MEDIA_TYPES
 
 _REPO_URL = 'https://github.com/light-nook-labs/sfacg'
@@ -32,22 +31,31 @@ def _strip_md(text: str) -> str:
     return '\n'.join(result)
 
 
-def _detect_content_type(dir_path: Path, items: list[CatalogItem]) -> str:
-    for item in items[:5]:
-        if not item.file:
-            continue
-        ext = Path(item.file).suffix.lower()
-        if ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
-            return 'comic'
-        if ext in ('.md', '.txt'):
-            return 'novel'
+def _detect_content_type(dir_path: Path, sections: list[dict]) -> str:
+    for sec in sections[:5]:
+        if sec.get('dir'):
+            ch_path = dir_path / sec['dir']
+            if ch_path.exists():
+                img_files = list(ch_path.glob('page_*.jpg'))
+                if img_files:
+                    return 'comic'
+        for item in sec.get('items', [])[:5]:
+            file = item.get('file')
+            if not file:
+                continue
+            ext = Path(file).suffix.lower()
+            if ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+                return 'comic'
+            if ext in ('.md', '.txt'):
+                return 'novel'
     return 'novel'
 
 
-def _read_item_text(dir_path: Path, item: CatalogItem) -> str:
-    if not item.file:
+def _read_item_text(dir_path: Path, item: dict) -> str:
+    file = item.get('file')
+    if not file:
         return ''
-    path = dir_path / item.file
+    path = dir_path / file
     if not path.exists():
         return ''
     text = path.read_text(encoding='utf-8')
@@ -58,13 +66,13 @@ def _read_item_text(dir_path: Path, item: CatalogItem) -> str:
 
 def convert_to_html(dir_path: str | Path, local_images: bool = True):
     dir_path = Path(dir_path)
-    catalog = Catalog.load(dir_path / 'catalog.json')
-    title = catalog.title or dir_path.name
-    author = catalog.author
-    cover_url = catalog.cover
+    catalog = load_json(dir_path / 'catalog.json')
+    title = catalog.get('title') or dir_path.name
+    author = catalog.get('author')
+    cover_url = catalog.get('cover')
 
-    all_items = [item for sec in catalog.sections for item in sec.items]
-    content_type = _detect_content_type(dir_path, all_items)
+    sections = catalog.get('sections', [])
+    content_type = _detect_content_type(dir_path, sections)
 
     css = """
 :root {
@@ -199,20 +207,20 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
 """
     ]
 
-    for sec in catalog.sections:
-        vol_title = sec.title
+    for sec in catalog.get('sections', []):
+        vol_title = sec.get('title', '')
         vol_display = re.sub(r'^【[^】]+】\s*', '', vol_title)
-        sec_id = f'sec_{sec.idx:03d}'
-        ch_count = sum(1 for it in sec.items if it.title)
+        sec_id = f'sec_{sec.get("idx", 0):03d}'
+        ch_count = sum(1 for it in sec.get('items', []) if it.get('title'))
         html_parts.append('<div class="vol-group">')
         if ch_count > 0:
             html_parts.append(
                 f'<button class="vol-toggle" onclick="this.classList.toggle(\'open\');this.nextElementSibling.classList.toggle(\'open\')"><span class="arrow">&#9654;</span>{html_escape(vol_display)}</button>'
             )
             html_parts.append('<div class="vol-chapters">')
-            for it in sec.items:
-                if it.title:
-                    html_parts.append(f'<a href="#{sec_id}_{it.idx:03d}">{html_escape(it.title)}</a>')
+            for it in sec.get('items', []):
+                if it.get('title'):
+                    html_parts.append(f'<a href="#{sec_id}_{it.get("idx", 0):03d}">{html_escape(it["title"])}</a>')
             html_parts.append('</div>')
         else:
             html_parts.append(
@@ -234,32 +242,38 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
     html_parts.append('</div>')
 
     html_parts.append('<div class="print-toc"><h2>目录</h2>')
-    for sec in catalog.sections:
-        vol_display = re.sub(r'^【[^】]+】\s*', '', sec.title)
+    for sec in catalog.get('sections', []):
+        vol_display = re.sub(r'^【[^】]+】\s*', '', sec.get('title', ''))
         html_parts.append(f'<div class="ptoc-vol">{html_escape(vol_display)}</div>')
     html_parts.append('</div>')
 
     if content_type == 'comic' and not local_images:
         html_parts.append('<div class="warning">本文件使用远程图片URL，链接随时可能失效。</div>')
 
-    for sec in catalog.sections:
-        vol_display = re.sub(r'^【[^】]+】\s*', '', sec.title)
-        html_parts.append(f'<div class="volume" id="sec_{sec.idx:03d}">')
+    for sec in catalog.get('sections', []):
+        vol_display = re.sub(r'^【[^】]+】\s*', '', sec.get('title', ''))
+        html_parts.append(f'<div class="volume" id="sec_{sec.get("idx", 0):03d}">')
         html_parts.append(f'<h2>{html_escape(vol_display)}</h2>')
-        for item in sec.items:
-            ch_id = f'sec_{sec.idx:03d}_{item.idx:03d}'
-            if item.title:
-                html_parts.append(f'<div class="chapter" id="{ch_id}"><h3>{html_escape(item.title)}</h3>')
-            else:
-                html_parts.append(f'<div class="chapter" id="{ch_id}">')
 
-            if content_type == 'comic':
-                if local_images:
-                    src = item.file
+        if content_type == 'comic':
+            ch_dir = sec.get('dir')
+            if ch_dir:
+                ch_path = dir_path / ch_dir
+                if ch_path.exists():
+                    img_files = sorted(ch_path.glob('page_*.jpg'))
+                    for img_file in img_files:
+                        src = f'{ch_dir}/{img_file.name}'
+                        html_parts.append(
+                            f'<div class="img-wrap"><img src="{html_escape(src)}" alt="" loading="lazy"></div>'
+                        )
+        else:
+            for item in sec.get('items', []):
+                ch_id = f'sec_{sec.get("idx", 0):03d}_{item.get("idx", 0):03d}'
+                if item.get('title'):
+                    html_parts.append(f'<div class="chapter" id="{ch_id}"><h3>{html_escape(item["title"])}</h3>')
                 else:
-                    src = item.url
-                html_parts.append(f'<div class="img-wrap"><img src="{html_escape(src)}" alt="" loading="lazy"></div>')
-            else:
+                    html_parts.append(f'<div class="chapter" id="{ch_id}">')
+
                 text = _read_item_text(dir_path, item)
                 if text:
                     for para in text.split('\n'):
@@ -275,7 +289,7 @@ body { font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
                             )
                         else:
                             html_parts.append(f'<p>{html_escape(para)}</p>')
-            html_parts.append('</div>')
+                html_parts.append('</div>')
         html_parts.append('</div>')
 
     html_parts.append('</div></div></div></body></html>')
@@ -294,13 +308,13 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
         return None
 
     dir_path = Path(dir_path)
-    catalog = Catalog.load(dir_path / 'catalog.json')
-    title = catalog.title or dir_path.name
-    author = catalog.author
+    catalog = load_json(dir_path / 'catalog.json')
+    title = catalog.get('title') or dir_path.name
+    author = catalog.get('author')
     fetcher = fetcher or Fetcher()
 
-    all_items = [item for sec in catalog.sections for item in sec.items]
-    content_type = _detect_content_type(dir_path, all_items)
+    sections = catalog.get('sections', [])
+    content_type = _detect_content_type(dir_path, sections)
 
     book = epub.EpubBook()
     book.set_identifier(str(dir_path))
@@ -309,9 +323,9 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
     if author:
         book.add_author(author)
 
-    if catalog.cover:
+    if catalog.get('cover'):
         try:
-            book.set_cover('cover.jpg', fetcher.get_binary(catalog.cover))
+            book.set_cover('cover.jpg', fetcher.get_binary(catalog['cover']))
         except Exception as e:
             logger.warning(f'封面下载失败: {e}')
 
@@ -326,42 +340,42 @@ def convert_to_epub(dir_path: str | Path, fetcher: Fetcher | None = None):
     spine = ['nav']
     toc = []
 
-    for sec in catalog.sections:
-        if not sec.items:
-            continue
-
-        ch_html = f'<h2>{html_escape(sec.title)}</h2>'
+    for sec in catalog.get('sections', []):
+        ch_html = f'<h2>{html_escape(sec.get("title", ""))}</h2>'
 
         if content_type == 'comic':
-            for item in sec.items:
-                img_path = dir_path / item.file
-                if img_path.exists():
-                    img_data = img_path.read_bytes()
-                    fname = f'img_{sec.idx:03d}_{item.idx:03d}{img_path.suffix}'
-                    suffix = img_path.suffix.lower()
-                    media_type = _MEDIA_TYPES.get(suffix, 'image/jpeg')
-                    book.add_item(
-                        epub.EpubImage(
-                            file_name=f'images/{fname}',
-                            media_type=media_type,
-                            content=img_data,
+            ch_dir = sec.get('dir')
+            if ch_dir:
+                ch_path = dir_path / ch_dir
+                if ch_path.exists():
+                    img_files = sorted(ch_path.glob('page_*.jpg'))
+                    for idx, img_file in enumerate(img_files, start=1):
+                        img_data = img_file.read_bytes()
+                        fname = f'img_{sec.get("idx", 0):03d}_{idx:03d}{img_file.suffix}'
+                        suffix = img_file.suffix.lower()
+                        media_type = _MEDIA_TYPES.get(suffix, 'image/jpeg')
+                        book.add_item(
+                            epub.EpubImage(
+                                file_name=f'images/{fname}',
+                                media_type=media_type,
+                                content=img_data,
+                            )
                         )
-                    )
-                    ch_html += f'<img src="images/{fname}" alt="">'
+                        ch_html += f'<img src="images/{fname}" alt="">'
         else:
-            for item in sec.items:
+            for item in sec.get('items', []):
                 text = _read_item_text(dir_path, item)
                 if text:
-                    if item.title:
-                        ch_html += f'<h3>{html_escape(item.title)}</h3>'
+                    if item.get('title'):
+                        ch_html += f'<h3>{html_escape(item["title"])}</h3>'
                     for para in text.split('\n'):
                         para = para.strip()
                         if para:
                             ch_html += f'<p>{html_escape(para)}</p>'
 
         page = epub.EpubHtml(
-            title=sec.title,
-            file_name=f'ch_{sec.idx:03d}.xhtml',
+            title=sec.get('title', ''),
+            file_name=f'ch_{sec.get("idx", 0):03d}.xhtml',
             lang='zh',
             content=ch_html,
         )
@@ -395,11 +409,11 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
         return None
 
     dir_path = Path(dir_path)
-    catalog = Catalog.load(dir_path / 'catalog.json')
-    title = catalog.title or dir_path.name
+    catalog = load_json(dir_path / 'catalog.json')
+    title = catalog.get('title') or dir_path.name
 
-    all_items = [item for sec in catalog.sections for item in sec.items]
-    content_type = _detect_content_type(dir_path, all_items)
+    sections = catalog.get('sections', [])
+    content_type = _detect_content_type(dir_path, sections)
 
     if content_type != 'comic':
         logger.warning('PDF 仅支持漫画，小说请使用 txt/epub/html')
@@ -410,9 +424,9 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
     c = canvas.Canvas(str(pdf_path), pagesize=A4)
     width, height = A4
 
-    if catalog.cover:
+    if catalog.get('cover'):
         try:
-            cover_data = fetcher.get_binary(catalog.cover)
+            cover_data = fetcher.get_binary(catalog['cover'])
             cover_img = ImageReader(BytesIO(cover_data))
             img_width, img_height = cover_img.getSize()
             max_cover_height = height * 0.5
@@ -427,9 +441,9 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
             c.setFont('STSong-Light', 28)
             c.drawCentredString(width / 2, height * 0.42, title)
 
-            if catalog.author:
+            if catalog.get('author'):
                 c.setFont('STSong-Light', 16)
-                c.drawCentredString(width / 2, height * 0.37, f'作者：{catalog.author}')
+                c.drawCentredString(width / 2, height * 0.37, f'作者：{catalog["author"]}')
 
             c.setFont('STSong-Light', 10)
             c.drawCentredString(width / 2, height * 0.05, 'Generated by SFACG Spider')
@@ -438,29 +452,53 @@ def convert_to_pdf(dir_path: str | Path, padding: int = 0, fetcher: Fetcher | No
         except Exception as e:
             logger.warning(f'封面下载失败: {e}')
 
-    for sec in catalog.sections:
-        if not sec.items:
-            continue
+    for sec in catalog.get('sections', []):
         c.setFont('STSong-Light', 24)
-        c.drawCentredString(width / 2, height / 2, sec.title)
+        c.drawCentredString(width / 2, height / 2, sec.get('title', ''))
         c.showPage()
-        for item in sec.items:
-            img_path = dir_path / item.file
-            if img_path.exists():
-                try:
-                    img = ImageReader(str(img_path))
-                    img_width, img_height = img.getSize()
-                    usable_width = width - 2 * padding
-                    usable_height = height - 2 * padding
-                    scale = min(usable_width / img_width, usable_height / img_height)
-                    draw_width = img_width * scale
-                    draw_height = img_height * scale
-                    x = (width - draw_width) / 2
-                    y = (height - draw_height) / 2
-                    c.drawImage(img, x, y, draw_width, draw_height)
-                    c.showPage()
-                except Exception as e:
-                    logger.warning(f'图片处理失败: {e}')
+
+        if content_type == 'comic':
+            ch_dir = sec.get('dir')
+            if ch_dir:
+                ch_path = dir_path / ch_dir
+                if ch_path.exists():
+                    img_files = sorted(ch_path.glob('page_*.jpg'))
+                    for img_file in img_files:
+                        try:
+                            img = ImageReader(str(img_file))
+                            img_width, img_height = img.getSize()
+                            usable_width = width - 2 * padding
+                            usable_height = height - 2 * padding
+                            scale = min(usable_width / img_width, usable_height / img_height)
+                            draw_width = img_width * scale
+                            draw_height = img_height * scale
+                            x = (width - draw_width) / 2
+                            y = (height - draw_height) / 2
+                            c.drawImage(img, x, y, draw_width, draw_height)
+                            c.showPage()
+                        except Exception as e:
+                            logger.warning(f'图片处理失败: {e}')
+        else:
+            for item in sec.get('items', []):
+                file = item.get('file')
+                if not file:
+                    continue
+                img_path = dir_path / file
+                if img_path.exists():
+                    try:
+                        img = ImageReader(str(img_path))
+                        img_width, img_height = img.getSize()
+                        usable_width = width - 2 * padding
+                        usable_height = height - 2 * padding
+                        scale = min(usable_width / img_width, usable_height / img_height)
+                        draw_width = img_width * scale
+                        draw_height = img_height * scale
+                        x = (width - draw_width) / 2
+                        y = (height - draw_height) / 2
+                        c.drawImage(img, x, y, draw_width, draw_height)
+                        c.showPage()
+                    except Exception as e:
+                        logger.warning(f'图片处理失败: {e}')
     c.save()
     logger.bind(force=True).info(f'PDF: {pdf_path}')
     return pdf_path
@@ -482,6 +520,3 @@ def convert(dir_path: str | Path, formats: list[str] | None = None, fetcher: Fet
             logger.warning(f'不支持的格式: {fmt}')
 
     return results
-
-
-convert_comic = convert

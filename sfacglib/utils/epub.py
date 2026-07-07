@@ -4,9 +4,14 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from bs4 import BeautifulSoup, Tag
-from ebooklib import epub
-from ebooklib.epub import EpubHtml
 from loguru import logger
+
+try:
+    from ebooklib import epub
+    from ebooklib.epub import EpubHtml
+except ImportError:
+    epub = None
+    EpubHtml = None
 
 from ..config import WORKERS_EPUB_IMG
 from ..fetcher import Fetcher

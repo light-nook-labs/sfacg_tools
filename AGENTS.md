@@ -4,30 +4,26 @@
 
 Multi-content-type web scraper for [SF Light Novel (sfacg.com)](https://book.sfacg.com) — a Chinese light novel, comic, and audiobook platform. Written in Python using `requests` + `BeautifulSoup`.
 
-**Status:** Not finished. Learning project.
+**Status:** Not finished. Learning project. No CLI — API changes frequently during development.
 
 ## Architecture
 
 ```
 sfacglib/
   __init__.py     # Package exports
-  models/         # Pydantic data models
-    __init__.py   # Re-exports SearchItem, Catalog, CatalogSection, CatalogItem
-    search.py     # SearchItem model
-    catalog.py    # Catalog, CatalogSection, CatalogItem models
-  base.py         # Abstract base classes: Container, Section, Item + _filter_items
-  config.py       # Centralized constants + Pydantic Settings + VipMode enum + migration
+  base.py         # Abstract base classes: Container, Section, Item
+  config.py       # Centralized constants + Pydantic Settings + migration
   fetcher.py      # Smart HTTP fetcher (rotating UA, retry, rate limiting, dual-session auth)
   auth.py         # Login, session persistence, cookie management (GetLoginInfo API)
   selectors.py    # CSS selector registry (loads from selectors.toml via tomllib)
-  novel.py        # Novel downloader (Novel, NovelVolume, NovelChapter, ReviewComment)
-  comic.py        # Comic downloader (Comic, ComicChapter)
+  novel.py        # Novel downloader (Novel, NovelVolume, NovelChapter, ReviewComment, Review)
+  comic.py        # Comic downloader (Comic, ComicChapter, ComicPage)
   audio.py        # Audiobook downloader (Audio, AudioVolume, AudioChapter)
   search.py       # Search API (keyword, related novels, author works)
   nlp.py          # NLP post-processing (merge wrapped lines)
-  progress.py     # Progress tracking with SQLite (batch commits, finalize_task)
   utils/          # Shared utilities
-    __init__.py   # sanitize_filename, fix_url_protocol, validate_gif, run_tasks, etc.
+    __init__.py   # sanitize_filename, fix_url_protocol, validate_gif, run_tasks, load_json, save_json
+    json.py       # JSON file utilities (load_json, save_json)
     convert.py    # Format conversion (HTML, EPUB, PDF — auto-detect novel/comic)
     epub.py       # EPUB generation with three-level TOC
   ocr/            # OCR package
@@ -35,36 +31,90 @@ sfacglib/
     engine.py     # OCR engine (RapidOCR, smart pinyin removal, rec_only, parallel, GPU auto-detect)
     chatbot.py    # Agent with tool calling (OCR, pinyin removal, batch ops)
 
-main.py           # Unified CLI entry point
-buildozer.spec    # Android APK build config
+scripts/
+  check_docs.py   # Verify AGENTS.md and README.md are in sync with codebase
+
+opencode.json     # opencode project config
 .env              # Chatbot config (CHATBOT_BASE_URL, CHATBOT_API_KEY, CHATBOT_MODEL)
 ```
 
-## Key Design Patterns
-
-### ChatBot Agent
-
-`ocr/chatbot.py` implements an agent (not just a chatbot) that can:
-- Chat with users naturally
-- Execute tasks via tool calling (OCR, pinyin removal, batch operations)
-- Refuse complex tasks and output CLI commands instead
-
-See [README.md](README.md#chatbot-agent) for usage examples.
-
-### Three-Layer Abstraction
-
-All content types follow a three-layer hierarchy: Container → Section → Item.
+## Content Structure
 
 | Content | Container | Section | Item |
 |---------|-----------|---------|------|
 | Novel | Novel | NovelVolume | NovelChapter |
-| Comic | Comic | ComicChapter | ComicPage |
+| Comic | Comic | (flat, chapters as sections) | (pages fetched dynamically) |
 | Audio | Audio | AudioVolume | AudioChapter |
-| Review | Review | ReviewSection | ReviewComment |
+| Review | Review | (flat, comments as sections) | (reviews downloaded directly) |
 
-**Container** provides concrete `download()`, `get_info()`, `get_sections()`. Subclasses implement `_download_item()`.
+### Container
 
-Review is independent — has own catalog.json, progress.db, dir. Can bind to Novel (`Review(novel=novel)`) or standalone (`Review(nid=5976, title='...', output_dir='./')`). Review progress tracker only tracks review-level downloads, not sub-comments (which are short JSON).
+- Provides `setup()` — fetches metadata, generates catalog.json
+- Provides `get_download_items()` — returns list of Items from catalog
+- Provides `download(ext, item_prefix)` — downloads all content to a directory
+- Manages catalog.json, info.md
+
+### Section
+
+- Provides `get_items()` — returns list of Items
+- Provides `download(dir_path, ext, item_prefix)` — downloads all items concurrently
+
+### Item
+
+- Provides `download(save_path)` — downloads single item
+- Provides `to_dict()` — serialization
+
+### Factory Methods
+
+```python
+novel = Novel(43708)
+vol = novel.create_vol(1)        # → NovelVolume
+chapter = vol.create_chapter(3)  # → NovelChapter
+review = novel.create_review()   # → Review (independent)
+```
+
+## Download Flow
+
+`container.download()` always produces the actual format directory:
+- Novel → `.md` files
+- Comic → `.jpg` files
+- Audio → `.mp3` files
+
+Conversion to other formats (HTML, EPUB, PDF) is done by `utils/convert.py` from the directory.
+
+### Concurrency Model
+
+Hierarchical thread pool (Novel/Comic/Review):
+- `Container.download()` submits `section.download()` concurrently
+- `Section.download()` submits `item.download()` concurrently
+- All share a single `ThreadPoolExecutor(max_workers=WORKERS_CHAPTER)`
+
+Audio uses async I/O:
+- `Audio.setup()` pre-fetches MP3 URLs via `ThreadPoolExecutor(max_workers=WORKERS_AUDIO_CHAPTER)`
+- `Audio.download()` uses `asyncio.run()` with `aiohttp.ClientSession`
+- `Semaphore(50)` limits concurrent connections
+- Streaming download (no full file in memory)
+
+### Container Lifecycle
+
+```python
+novel = Novel(nid, output_dir=Path('~/Downloads'), fetcher=fetcher)
+# __init__ calls setup() which fetches homepage + catalog, generates catalog.json
+# setup() returns True if successful, False if not
+novel.download()                  # downloads all chapters as .md
+novel.download(ext='epub')        # downloads then converts to epub
+
+vol = novel.create_vol(1)
+vol.download(dir_path)            # download single volume
+
+chapter = vol.create_chapter(3)
+chapter.download(save_path)       # download single chapter
+
+review = novel.create_review()
+review.download()                 # reviews as .md in reviews/ dir
+```
+
+## Key Design Patterns
 
 ### Selector Registry
 
@@ -81,51 +131,21 @@ Fallback copies exist in the package dir and are auto-migrated on first run.
 
 ### Authentication
 
-SFACG login requires Tencent CAPTCHA. Import cookies from browser DevTools. See [README.md](README.md#登录) for instructions.
+SFACG login requires Tencent CAPTCHA. Import cookies from browser DevTools. See README for instructions.
 
 Cookie validation uses `passport.sfacg.com/Ajax/GetLoginInfo.ashx` API. Cookies are set in request header directly for correct domain matching.
 
 ### VIP Chapter Processing
 
-VIP chapters have three modes tracked by `CatalogItem.vip_mode` (string):
-- `''` (free) — no special handling
-- `'encrypted'` — downloaded as `.gif`, requires OCR
-- `'image'` — has `\ue905` icon in catalog, downloaded as `.md` with embedded images
+VIP chapters have two types tracked by `CatalogItem.is_gif` (boolean):
+- `False` (free or image VIP) — normal download
+- `True` (encrypted VIP) — downloaded as `.gif`, requires OCR
 
-Detection: `Novel._parse_pc_catalog()` checks for `.icn_vip` and `.icn` span content. VIP GIF download constructs URL directly from chapter ID, includes `Referer` header.
+Detection: `Novel._parse_pc_catalog()` checks for `.icn_vip` and `.icn` span content during catalog generation (not at download time).
 
-See [README.md](README.md#vip-章节与-ocr) for OCR workflow and performance comparison.
-
-### Format Conversion
-
-`utils/convert.py` provides standalone format conversion for both novels and comics. Auto-detects content type from file extensions. HTML output features sidebar TOC, responsive layout, and print-to-PDF support. See [README.md](README.md#格式转换) for usage.
-
-### Search API
-
-`search.py` provides novel/comic search via `s.sfacg.com` HTML scraping and `m.sfacg.com` JSON API. Also supports related novels (`get_related`) and author works (`get_author_works`). See [README.md](README.md#搜索) for usage.
-
-### Pydantic Models
-
-`models/` package defines data models for type safety and validation:
-- `SearchItem` — search results
-- `Catalog` — nested catalog structure (with `load()`/`save()`/`_migrate()`)
-- `CatalogSection` — volume/chapter section
-- `CatalogItem` — individual chapter/page (fields: idx, title, url, file, vip_mode)
-
-`config.py` uses `pydantic-settings` for `.env` configuration via the `Settings` class.
-
-### Container Lifecycle
-
-```python
-novel = Novel(nid, output_dir=Path('~/Downloads'), fetcher=fetcher)
-# __init__ validates ID, creates dir_path, catalog.json, info.md, progress.db
-novel.download(ext='md', range_str='1-10')  # downloads missing items only
-novel._download_reviews(ext='md')           # optional: download reviews to reviews/ subdir
-```
-
-### Concurrency Model
-
-Hierarchical thread pool — `Container.download()` submits `section.download()` concurrently, each `section.download()` submits `item.download()` concurrently. All share a single `ThreadPoolExecutor(max_workers=50)`.
+Download routing in `NovelChapter.download()`:
+- Encrypted VIP (`is_gif=True`): `_download_vip_gif()` → `.gif` + OCR
+- Free/Image VIP (`is_gif=False`): `_download_normal()` → `.md` or `_download_vip_image()` → `.jpg`
 
 ### Dual-Session Fetcher
 
@@ -133,9 +153,27 @@ Hierarchical thread pool — `Container.download()` submits `section.download()`
 - `auth_session` — delay=0.2s, max_concurrent=10, for VIP content
 - VIP calls pass `vip=True` to use auth session
 
-### Progress Tracking
+### Catalog Format
 
-SQLite-based with batch commits (`BATCH_SIZE=20`). `ProgressTracker` uses `threading.Lock`. `finalize_task()` calls `flush()` before reading completion status.
+`catalog.json` is generated during `Container.setup()` and stores the complete structure:
+- `id`, `title`, `author`, `cover` — metadata
+- `info_file` — filename for info.md
+- `sections[]` — list of volumes/chapters:
+  - `idx`, `title`, `vol_id?`, `dir`
+  - `items[]` — list of chapters/pages:
+    - `idx`, `title`, `chapter_id?`, `is_gif`, `file`
+    - Audio: `mp3_url` (pre-fetched during setup)
+
+`config.py` uses `pydantic-settings` for `.env` configuration via the `Settings` class.
+
+### Audio Catalog Format
+
+Audio has a simplified catalog (no `author`, `info_file`, or per-item `cover`):
+- `id`, `title`, `cover` — metadata (cover from chapter page `<img>`)
+- `sections[]` — list of volumes:
+  - `idx`, `title`, `dir`
+  - `items[]` — list of chapters:
+    - `idx`, `title`, `url` (full URL), `file`, `mp3_url`
 
 ## Coding Conventions
 
@@ -157,18 +195,13 @@ SQLite-based with batch commits (`BATCH_SIZE=20`). `ProgressTracker` uses `threa
 - All constants in `sfacglib/config.py` (no hardcoded URLs/paths)
 - Logging via `loguru` (not stdlib logging)
 - Rate limiting: always respect delays between requests (0.2s–3s depending on context)
-- Concurrency: flat `ThreadPoolExecutor` for parallel downloads
-- Progress: `ProgressTracker` with SQLite (thread-safe with `threading.Lock`, batch commits)
+- Concurrency: hierarchical `ThreadPoolExecutor` for parallel downloads (Novel/Comic/Review), `asyncio` + `aiohttp` for Audio
 - Cookie file: stored in `~/.config/sfacg/.cookies.json` with `0600` permissions
 - Config files: `selectors.toml`, `audiobooks.json` in `~/.config/sfacg/` (with package fallbacks)
 - Directory mode: all formats default to directory mode (one file per chapter/page)
 - catalog.json: metadata + ordered chapter mapping for assembly (no status/error fields)
 - Single file/EPUB: assembled from directory structure
 - No comments in code unless explicitly asked
-
-## Running
-
-See [README.md](README.md#快速开始) for all CLI commands and GUI options.
 
 ## MCP Tools Available
 
@@ -179,4 +212,3 @@ See [README.md](README.md#快速开始) for all CLI commands and GUI options.
 - `common.gif` — Test VIP chapter image for OCR testing, **DO NOT DELETE**
 - `selectors.toml` — CSS selectors (both package dir and `~/.config/sfacg/`)
 - `audiobooks.json` — Audiobook catalog (both package dir and `~/.config/sfacg/`)
-- `review_*.md` — Review files (downloaded per novel, in `{novel_dir}/reviews/`)

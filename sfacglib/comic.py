@@ -1,18 +1,16 @@
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from time import time
 
 from bs4 import BeautifulSoup
 from loguru import logger
-from tqdm import tqdm
 
-from .base import Container, Item, Section, _sanitize_filename
-from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE, WORKERS_CHAPTER
+from .base import Container, InvalidNovelError, Item, Section
+from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE
 from .fetcher import Fetcher
-from .models import Catalog, CatalogItem, CatalogSection
 from .selectors import Selectors
+from .utils import fix_url_protocol, save_json
+from .utils import sanitize_filename as _sanitize_filename
 
 
 class ComicPage(Item):
@@ -40,15 +38,21 @@ class ComicPage(Item):
 
 
 class ComicChapter(Section):
-    def __init__(self, idx: int, title: str, url: str, fetcher: Fetcher, sel: Selectors):
+    def __init__(self, idx: int, title: str, chapter_url: str, fetcher: Fetcher, sel: Selectors, dir_name: str = ''):
         super().__init__(idx, title)
-        self.url = url
+        self.chapter_url = chapter_url
         self.fetcher = fetcher
         self.sel = sel
+        self.dir_name = dir_name or f'ch_{idx:03d}_{_sanitize_filename(title)}'
+        self._html: str = ''
 
-    def _get_args(self, html: str = '') -> list[str]:
-        if not html:
-            html = self.fetcher.get_html(self.url)
+    def _get_html(self) -> str:
+        if not self._html:
+            self._html = self.fetcher.get_html(self.chapter_url)
+        return self._html
+
+    def _get_args(self) -> list[str]:
+        html = self._get_html()
 
         patterns = [
             (r'var\s+c\s*=\s*(\d+)', 'comicId'),
@@ -83,9 +87,8 @@ class ComicChapter(Section):
                     return [result['comicId'], result['nv'], result['chapterId']]
         return []
 
-    def _is_vip(self, html: str = '') -> bool:
-        if not html:
-            html = self.fetcher.get_html(self.url)
+    def _is_vip(self) -> bool:
+        html = self._get_html()
         soup = BeautifulSoup(html, 'html.parser')
 
         for script in soup.find_all('script'):
@@ -102,10 +105,9 @@ class ComicChapter(Section):
         return False
 
     def get_image_urls(self, use_vip_api: bool = False) -> list[str]:
-        html = self.fetcher.get_html(self.url)
-        args = self._get_args(html)
+        args = self._get_args()
         if len(args) < 3:
-            logger.error(f'Failed to extract comic args from {self.url}')
+            logger.error(f'Failed to extract comic args from {self.chapter_url}')
             return []
         comic_id, nv, chapter_id = args[0], args[1], args[2]
 
@@ -166,8 +168,9 @@ class Comic(Container):
         self.url = url
         self.id = self._extract_id(url)
         self.sel = selectors or Selectors()
-        self.get_info()
-        self._setup()
+
+        if not self.setup():
+            raise InvalidNovelError(f'HTTP错误或URL无效 (url={url})')
 
     @staticmethod
     def _extract_id(url: str) -> str:
@@ -177,347 +180,117 @@ class Comic(Container):
     def __repr__(self):
         return f'<Comic: {self.url}>'
 
-    def get_info(self) -> tuple[str, str]:
-        html = self.fetcher.get_html(self.url)
-        soup = BeautifulSoup(html, 'html.parser')
+    def setup(self) -> bool:
+        try:
+            html = self.fetcher.get_html(self.url)
+            soup = BeautifulSoup(html, 'html.parser')
 
-        container = self.sel.find(soup, 'comic_info', 'container', url=self.url)
+            container = self.sel.find(soup, 'comic_info', 'container', url=self.url)
 
-        title_tag = soup.title
-        if title_tag:
-            title_text = title_tag.get_text()
-            if ',' in title_text:
-                title = title_text.split(',')[0].strip()
-            elif '漫画' in title_text:
-                title = title_text.split('漫画')[0].strip()
+            title_tag = soup.title
+            if title_tag:
+                title_text = title_tag.get_text()
+                if ',' in title_text:
+                    title = title_text.split(',')[0].strip()
+                elif '漫画' in title_text:
+                    title = title_text.split('漫画')[0].strip()
+                else:
+                    title = title_text.split('_')[0].strip()
             else:
-                title = title_text.split('_')[0].strip()
-        else:
-            title = self.sel.find_text(soup, 'comic_info', 'title', url=self.url) or '未知漫画'
-        self.title = title
+                title = self.sel.find_text(soup, 'comic_info', 'title', url=self.url) or '未知漫画'
+            self.title = title
 
-        cover = self.sel.find_attr(soup, 'comic_info', 'cover', url=self.url, required=False) or ''
-        if cover.startswith('//'):
-            cover = 'https:' + cover
-        self.cover = cover
+            cover = self.sel.find_attr(soup, 'comic_info', 'cover', url=self.url, required=False) or ''
+            self.cover = fix_url_protocol(cover)
 
-        label = ''
-        label_tag = self.sel.find(soup, 'comic_info', 'labels', url=self.url, required=False)
-        if label_tag:
-            label = ' '.join(label_tag.stripped_strings)
+            author = ''
+            if container:
+                container_text = container.get_text()
+                author_match = re.search(r'作者[：:]\s*(.+?)(?:\s*作品类型|$)', container_text)
+                if author_match:
+                    author = author_match.group(1).strip()
+            self.author = author
 
-        author = ''
-        more_info = ''
-        if container:
-            container_text = container.get_text()
-            author_match = re.search(r'作者[：:]\s*(.+?)(?:\s*作品类型|$)', container_text)
-            if author_match:
-                author = author_match.group(1).strip()
+            description = ''
+            if container:
+                li_tags = container.find_all('li')
+                for li in li_tags:
+                    if not li.get('class') or 'cover' not in li.get('class', []):
+                        text = li.get_text(strip=True)
+                        if text and len(text) > 20:
+                            description = text.split('漫画地区')[0].split('作者')[0].strip()
+                            break
+            self.intro = description
 
-            region_match = re.search(r'漫画地区[：:]\s*(.+?)(?:\s|作者|$)', container_text)
-            type_match = re.search(r'作品类型[：:]\s*(.+?)(?:\s|$)', container_text)
-            update_match = re.search(r'最新连载[：:]\s*(.+?)(?:\s|$)', container_text)
-            clicks_match = re.search(r'点击数[：:]\s*(\d+)', container_text)
+            self.dir_path = self.output_dir / _sanitize_filename(self.title)
+            self.dir_path.mkdir(parents=True, exist_ok=True)
 
-            parts = []
-            if region_match:
-                parts.append(f'地区：{region_match.group(1).strip()}')
-            if type_match:
-                parts.append(f'类型：{type_match.group(1).strip()}')
-            if update_match:
-                parts.append(f'最新：{update_match.group(1).strip()}')
-            if clicks_match:
-                parts.append(f'点击：{clicks_match.group(1).strip()}')
-            more_info = '　'.join(parts)
-        self.author = author
+            info_md = f"""# {title}
 
-        interactions = ''
-        interact_tag = self.sel.find(soup, 'comic_info', 'interactions', url=self.url, required=False)
-        if interact_tag:
-            items = list(interact_tag.stripped_strings)
-            if items:
-                items.pop()
-            interactions = ' '.join(items)
-
-        description = ''
-        if container:
-            li_tags = container.find_all('li')
-            for li in li_tags:
-                if not li.get('class') or 'cover' not in li.get('class', []):
-                    text = li.get_text(strip=True)
-                    if text and len(text) > 20:
-                        description = text.split('漫画地区')[0].split('作者')[0].strip()
-                        break
-        self.intro = description
-
-        info_md = f"""
-# {title}
-
-![封面]({cover})
+![封面]({self.cover})
 
 漫画地址： {self.url}
 
 作者：{author}
 
-标签： {label}
-
-{more_info}
-
-{interactions}
-
 {description}
 """
-        info_html = f"""<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>{title}</title></head>
-<body>
-<h1>{title}</h1>
-<img src="{cover}" alt="">
-<p>漫画地址： {self.url}</p>
-<p>作者：{author}</p>
-<p>标签： {label}</p>
-<p>{more_info}</p>
-<p>{interactions}</p>
-<div>{description}</div>
-</body>
-</html>"""
-        return info_md, info_html
+            (self.dir_path / 'info.md').write_text(info_md, encoding='utf-8')
 
-    def get_sections(self) -> list[ComicChapter]:
-        html = self.fetcher.get_html(self.url)
-        soup = BeautifulSoup(html, 'html.parser')
-        a_tags = self.sel.find_all(soup, 'comic_info', 'chapter_list', url=self.url)
-        chapters: list[ComicChapter] = []
-        for ch_idx, a_tag in enumerate(reversed(a_tags), start=1):
-            href = a_tag.get('href', '')
-            if href:
+            a_tags = self.sel.find_all(soup, 'comic_info', 'chapter_list', url=self.url)
+
+            sections = []
+            ch_idx = 0
+            for a_tag in reversed(a_tags):
+                href = a_tag.get('href', '')
+                if not href:
+                    continue
+                ch_idx += 1
                 ch_title = a_tag.get_text().strip()
                 ch_url = f'{COMIC_READER_BASE}{href}'
-                chapters.append(ComicChapter(ch_idx, ch_title, ch_url, self.fetcher, self.sel))
-        return chapters
 
-    def _download_item(self, item: 'ComicPage', save_path: Path, pbar=None, lock=None):
-        item.download(save_path, pbar, lock)
+                safe_title = _sanitize_filename(ch_title)
+                dir_name = f'ch_{ch_idx:03d}_{safe_title}'
 
-    def download(
-        self,
-        start_chapter: str | None = None,
-        end_chapter: str | None = None,
-        chapter_range: str | None = None,
-    ):
-        sections = self.get_sections()
-        sections = self._filter_sections(sections, start_chapter, end_chapter, chapter_range)
-
-        all_items = []
-        for section in sections:
-            for item in section.get_items():
-                all_items.append((section, item))
-
-        if not all_items:
-            logger.error('没有可下载的内容')
-            return
-
-        to_download = []
-        for section, item in all_items:
-            safe_section = _sanitize_filename(section.title)
-            section_dir = self.dir_path / f'ch_{section.idx:03d}_{safe_section}'
-            safe_title = _sanitize_filename(item.title)
-            if safe_title:
-                filename = f'page_{item.idx:03d}_{safe_title}.jpg'
-            else:
-                filename = f'page_{item.idx:03d}.jpg'
-            save_path = section_dir / filename
-
-            if save_path.exists():
-                continue
-            to_download.append((section, item, save_path))
-
-        skip_count = len(all_items) - len(to_download)
-        if skip_count:
-            logger.bind(force=True).info(f'跳过已下载: {skip_count} 页')
-
-        if not to_download:
-            logger.bind(force=True).info('所有内容已下载完成')
-            return self.dir_path
-
-        task_id = f'comic_{self.id}'
-        self.tracker.create_task(
-            'comic', self.title, self.id, '', chapters=[{'url': i.url, 'title': i.title} for _, i, _ in to_download]
-        )
-
-        logger.bind(force=True).info(f'共 {len(to_download)} 页待下载')
-
-        lock = threading.Lock()
-        pbar = tqdm(total=len(to_download), desc=self.title, unit='page')
-
-        section_map: dict[int, CatalogSection] = {}
-        with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
-            futures = {}
-            for section, item, save_path in to_download:
-                futures[executor.submit(item.download, save_path, pbar, lock)] = (
-                    section,
-                    item,
-                    save_path,
+                sections.append(
+                    {
+                        'idx': ch_idx,
+                        'title': ch_title,
+                        'chapter_url': ch_url,
+                        'dir': dir_name,
+                    }
                 )
 
-            for future in as_completed(futures):
-                section, item, save_path = futures[future]
-                try:
-                    future.result()
-                    self.tracker.mark_done(task_id, item.url)
-                    if section.idx not in section_map:
-                        section_map[section.idx] = CatalogSection(
-                            idx=section.idx,
-                            title=section.title,
-                            dir=save_path.parent.name,
-                            items=[],
-                        )
-                    section_map[section.idx].items.append(
-                        CatalogItem(
-                            idx=item.idx,
-                            title=item.title,
-                            url=item.url,
-                            file=str(save_path.relative_to(self.dir_path)),
-                        )
-                    )
-                except Exception as e:
-                    logger.error(f'Failed: {item.title} - {e}')
-                    self.tracker.mark_failed(task_id, item.url, str(e))
-                    if pbar and lock:
-                        with lock:
-                            pbar.update(1)
+            catalog = {
+                'id': self.id,
+                'title': self.title,
+                'author': self.author,
+                'cover': self.cover,
+                'info_file': 'info.md',
+                'sections': sections,
+            }
+            save_json(catalog, self.dir_path / 'catalog.json')
 
-        pbar.close()
+            return True
+        except Exception as e:
+            logger.error(f'Setup failed: {e}')
+            return False
 
-        catalog = Catalog(
-            id=self.id,
-            title=self.title,
-            author=self.author,
-            cover=self.cover,
-            intro=self.intro,
-        )
-        catalog.sections = sorted(section_map.values(), key=lambda s: s.idx)
-        catalog.save(self.dir_path / 'catalog.json')
+    def get_download_items(self) -> list[tuple[ComicChapter, ComicPage]]:
+        catalog = self._load_catalog()
+        chapters = []
+        for sec in catalog.get('sections', []):
+            chapter = ComicChapter(
+                idx=sec['idx'],
+                title=sec['title'],
+                chapter_url=sec['chapter_url'],
+                fetcher=self.fetcher,
+                sel=self.sel,
+                dir_name=sec.get('dir'),
+            )
+            for page in chapter.get_items():
+                chapters.append((chapter, page))
+        return chapters
 
-        self.tracker.finalize_task(task_id)
-
-        logger.bind(force=True).info(f'目录保存到 {self.dir_path}')
-
-    def export_html(
-        self,
-        local_images: bool = True,
-        start_chapter: str | None = None,
-        end_chapter: str | None = None,
-        chapter_range: str | None = None,
-    ):
-        if not local_images:
-            logger.warning('使用URL模式: 图片链接随时可能失效，建议使用 local_images=True 下载到本地')
-
-        sections = self.get_sections()
-        sections = self._filter_sections(sections, start_chapter, end_chapter, chapter_range)
-
-        if local_images:
-            all_items = []
-            for section in sections:
-                for item in section.get_items():
-                    all_items.append((section, item))
-
-            if all_items:
-                lock = threading.Lock()
-                pbar = tqdm(total=len(all_items), desc=self.title, unit='page')
-                with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
-                    futures = {}
-                    for section, item in all_items:
-                        safe_section = _sanitize_filename(section.title)
-                        section_dir = self.dir_path / f'ch_{section.idx:03d}_{safe_section}'
-                        section_dir.mkdir(exist_ok=True)
-                        safe_title = _sanitize_filename(item.title)
-                        if safe_title:
-                            filename = f'page_{item.idx:03d}_{safe_title}.jpg'
-                        else:
-                            filename = f'page_{item.idx:03d}.jpg'
-                        save_path = section_dir / filename
-                        futures[executor.submit(item.download, save_path, pbar, lock)] = (item, save_path)
-
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as e:
-                            logger.error(f'Failed: {e}')
-                            if pbar and lock:
-                                with lock:
-                                    pbar.update(1)
-                pbar.close()
-
-        self._export_html(self.dir_path, sections, local_images)
-        logger.bind(force=True).info(f'HTML保存到 {self.dir_path}')
-
-    def _export_html(self, dir_path: Path, sections: list[ComicChapter], local_images: bool = True):
-        catalog_path = dir_path / 'catalog.json'
-        if catalog_path.exists():
-            catalog = Catalog.load(catalog_path)
-        else:
-            catalog = Catalog(id='', title=self.title)
-
-        if not local_images:
-            logger.warning('HTML使用远程URL，图片链接将在服务器清理后失效')
-
-        html_parts = [
-            f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>{self.title}</title>
-<style>
-body {{ font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
-h1 {{ text-align: center; color: #333; }}
-h2 {{ color: #666; border-bottom: 2px solid #ddd; padding-bottom: 10px; }}
-.chapter {{ margin-bottom: 40px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
-.toc {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
-.toc a {{ display: block; padding: 8px; color: #0066cc; text-decoration: none; }}
-.toc a:hover {{ background: #f0f0f0; }}
-.warning {{ background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 8px; margin-bottom: 20px; }}
-</style>
-</head>
-<body>
-<h1>{self.title}</h1>
-"""
-        ]
-
-        if not local_images:
-            html_parts.append('<div class="warning">本文件使用远程图片URL，链接随时可能失效。建议下载本地版本。</div>')
-
-        html_parts.append("""<div class="toc">
-<h2>目录</h2>
-""")
-
-        for section in sections:
-            html_parts.append(f'<a href="#ch_{section.idx:03d}">{section.title}</a>')
-
-        html_parts.append('</div>')
-
-        for section in catalog.sections:
-            html_parts.append(f'<div class="chapter" id="ch_{section.idx:03d}">')
-            html_parts.append(f'<h2>{section.title}</h2>')
-
-            for item in section.items:
-                if local_images:
-                    img_src = item.file
-                else:
-                    img_src = item.url
-
-                html_parts.append(f'<img src="{img_src}" alt="{item.title}" loading="lazy">')
-
-            html_parts.append('</div>')
-
-        html_parts.append('</body></html>')
-
-        html_file = dir_path / f'{_sanitize_filename(self.title)}.html'
-        html_file.write_text('\n'.join(html_parts), encoding='utf-8')
-        logger.bind(force=True).info(f'HTML文件: {html_file}')
-
-
-if __name__ == '__main__':
-    comic = Comic('https://manhua.sfacg.com/mh/LYZJ/')
-    comic.download()
+    def download(self, ext: str = 'jpg', item_prefix: str = 'page'):
+        super().download(ext=ext, item_prefix=item_prefix)

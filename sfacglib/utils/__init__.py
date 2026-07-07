@@ -10,8 +10,15 @@ from PIL import Image
 from tqdm import tqdm
 
 from ..config import MOBILE_BASE
+from .json import load_json as load_json
+from .json import save_json as save_json
 
 T = TypeVar('T')
+
+
+def extract_id(url: str) -> str:
+    match = re.search(r'/(\d+)/?$', url.rstrip('/'))
+    return match.group(1) if match else url
 
 
 def sanitize_filename(name: str) -> str:

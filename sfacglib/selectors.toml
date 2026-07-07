@@ -63,9 +63,17 @@ description = "Volume title text"
 selector = ".catalog-list"
 description = "Chapter list divs after volume header"
 
+[novel_pc_index.chapter_links]
+selector = ".catalog-list a[href]"
+description = "Chapter links within a volume (PC)"
+
 [novel_pc_index.vip_badge]
 selector = ".icn_vip"
 description = "VIP badge span indicating paid chapter"
+
+[novel_pc_index.image_badge]
+selector = ".icn"
+description = "Image badge span indicating image VIP chapter"
 
 [chapter_mobile.title]
 selector = "title"

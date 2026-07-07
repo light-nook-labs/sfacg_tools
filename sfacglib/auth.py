@@ -4,7 +4,7 @@ import os
 import requests
 from loguru import logger
 
-from .config import COOKIE_DOMAIN, COOKIE_PATH
+from .config import COOKIE_DOMAIN, COOKIE_PATH, _ensure_config
 
 _DEFAULT_UA = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -32,6 +32,7 @@ class Auth:
 
     def load(self) -> bool:
         """Load saved cookies from file."""
+        _ensure_config()
         if not COOKIE_PATH.exists():
             return False
 
@@ -55,12 +56,16 @@ class Auth:
         self.username = username
         self.is_logged_in = True
 
+        _ensure_config()
         COOKIE_PATH.parent.mkdir(parents=True, exist_ok=True)
         COOKIE_PATH.write_text(
             json.dumps({'cookies': cookies, 'username': username}, ensure_ascii=False, indent=2),
             encoding='utf-8',
         )
-        os.chmod(COOKIE_PATH, 0o600)
+        try:
+            os.chmod(COOKIE_PATH, 0o600)
+        except OSError:
+            pass
         logger.info(f'Cookies saved to {COOKIE_PATH}')
 
     def import_cookies(self, cookie_string: str) -> bool:
@@ -135,6 +140,7 @@ class Auth:
         self.is_logged_in = False
         self.username = ''
         try:
+            _ensure_config()
             if COOKIE_PATH.exists():
                 COOKIE_PATH.unlink()
         except OSError as e:

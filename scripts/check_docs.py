@@ -25,12 +25,11 @@ KEY_FILES = {
     'comic.py',
     'audio.py',
     'search.py',
-    'progress.py',
     'base.py',
 }
 
 # Directories that MUST appear
-KEY_DIRS = {'models/', 'ocr/', 'utils/'}
+KEY_DIRS = {'ocr/', 'utils/'}
 
 
 def read_text(path):
