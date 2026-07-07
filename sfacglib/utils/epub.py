@@ -32,10 +32,17 @@ def _detect_media_type(url: str, fallback: str = 'image/jpeg') -> str:
     return _MEDIA_TYPES.get(f'.{ext}', fallback)
 
 
-def _set_cover(book: epub.EpubBook, cover_url: str, fetcher: Fetcher) -> None:
+def _set_cover(
+    book: epub.EpubBook, cover_url: str, fetcher: Fetcher, dir_path: Path | None = None, cover_file: str = ''
+) -> None:
     if not cover_url:
         return
     try:
+        if dir_path and cover_file:
+            cover_path = dir_path / cover_file
+            if cover_path.exists():
+                book.set_cover(cover_file, cover_path.read_bytes())
+                return
         book.set_cover('cover.jpg', fetcher.get_binary(cover_url))
     except Exception as e:
         logger.warning(f'封面下载失败: {e}')
@@ -158,6 +165,8 @@ def download_epub(
     cover: str,
     path: str | Path = './',
     fetcher: Fetcher | None = None,
+    dir_path: Path | None = None,
+    cover_file: str = '',
 ) -> None:
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -170,7 +179,7 @@ def download_epub(
     book.add_author(author)
     book.add_metadata('DC', 'description', desc)
 
-    _set_cover(book, cover, fetcher)
+    _set_cover(book, cover, fetcher, dir_path, cover_file)
 
     spine: list[str | EpubHtml] = ['nav']
     toc: list = []
@@ -251,6 +260,8 @@ def convert_md_to_epub(
     cover: str,
     path: str | Path = './',
     fetcher: Fetcher | None = None,
+    dir_path: Path | None = None,
+    cover_file: str = '',
 ) -> None:
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -263,7 +274,7 @@ def convert_md_to_epub(
     book.add_author(author)
     book.add_metadata('DC', 'description', desc)
 
-    _set_cover(book, cover, fetcher)
+    _set_cover(book, cover, fetcher, dir_path, cover_file)
 
     spine: list[str | EpubHtml] = ['nav']
     toc: list = []
@@ -355,5 +366,7 @@ def convert_html_to_epub(
     cover: str,
     path: str | Path = './',
     fetcher: Fetcher | None = None,
+    dir_path: Path | None = None,
+    cover_file: str = '',
 ) -> None:
-    download_epub(html, title, author, desc, cover, path, fetcher)
+    download_epub(html, title, author, desc, cover, path, fetcher, dir_path, cover_file)

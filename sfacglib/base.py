@@ -118,6 +118,28 @@ class Container(ABC):
         self.cover: str = ''
         self.dir_path: Path = Path()
 
+    def _download_cover(self) -> str:
+        """下载封面图片到本地，返回本地文件名。"""
+        if not self.cover or not self.dir_path:
+            return ''
+        try:
+            cover_data = self.fetcher.get_binary(self.cover)
+            from io import BytesIO
+
+            from PIL import Image
+
+            img = Image.open(BytesIO(cover_data))
+            fmt = img.format or 'JPEG'
+            ext = '.' + fmt.lower()
+            if ext == '.jpeg':
+                ext = '.jpg'
+            cover_path = self.dir_path / f'cover{ext}'
+            img.save(cover_path)
+            return cover_path.name
+        except Exception as e:
+            logger.warning(f'封面下载失败: {e}')
+            return ''
+
     @abstractmethod
     def setup(self) -> bool:
         """初始化：创建目录 + 获取元信息 + 生成 catalog.json。成功返回 True。"""

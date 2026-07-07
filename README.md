@@ -67,9 +67,8 @@ review.download()
 
 ```python
 from sfacglib.comic import Comic
-from sfacglib.utils.convert import convert
 
-comic = Comic('https://manhua.sfacg.com/mh/LYZJ/', output_dir='./output/', fetcher=fetcher)
+comic = Comic('LYZJ', output_dir='./output/', fetcher=fetcher)
 comic.download()                  # 下载所有章节图片为 .jpg
 comic.download(ext='html')        # 下载后转换为 html
 ```
@@ -88,9 +87,12 @@ audio.download()                  # 下载所有章节为 .mp3
 ```python
 from sfacglib.utils.convert import convert
 
-convert('output/小说目录', formats=['html', 'epub'])
+convert('output/小说目录', formats=['html', 'epub', 'txt'])
 convert('output/漫画目录', formats=['html', 'epub', 'pdf'])
 ```
+
+> [!NOTE]
+> 漫画的 HTML 默认使用外部图片链接。EPUB/PDF 仅支持页漫（宽高比相近），条漫会自动跳过。
 
 ### 搜索
 
@@ -196,11 +198,10 @@ sfacglib/
   audiobooks.json   # 有声目录缓存（备用副本）
   search.py         # 搜索 API（关键词、相关推荐、作者作品）
   nlp.py            # NLP 后处理（合并断行）
-  progress.py       # 进度追踪（SQLite，批量提交）
   utils/            # 共享工具
     __init__.py     # sanitize_filename, fix_url_protocol, validate_gif, run_tasks, load_json, save_json
     json.py         # JSON 文件工具（load_json, save_json）
-    convert.py      # 格式转换（小说/漫画 → HTML/EPUB/PDF）
+    convert.py      # 格式转换（小说/漫画 → HTML/EPUB/PDF/TXT）
     epub.py         # EPUB 生成
   ocr/              # OCR 包
     __init__.py     # 导出 ChatBot, ocr_gif, remove_pinyin 等
@@ -231,6 +232,7 @@ opencode.json       # opencode 项目配置
   "title": "小说标题",
   "author": "作者名",
   "cover": "https://...",
+  "cover_file": "cover.jpg",
   "info_file": "info.md",
   "sections": [
     {
@@ -259,6 +261,7 @@ opencode.json       # opencode 项目配置
   "id": "19",
   "title": "公会看板娘之野望",
   "cover": "https://rss.sfacg.com/web/audio/images/albumCover/...",
+  "cover_file": "cover.jpg",
   "sections": [
     {
       "idx": 1,
@@ -272,6 +275,31 @@ opencode.json       # opencode 项目配置
           "mp3_url": "https://rss.sfacg.com/web/audio/files/19/xxx.mp3",
           "file": "sec_001_第一卷_日渐丰富的日常/item_001_1._失业人士(哑巴).mp3"
         }
+      ]
+    }
+  ]
+}
+```
+
+漫画的 catalog 额外包含 `image_urls` 字段（setup 时预取，用于 HTML 外部链接）：
+
+```json
+{
+  "id": "LYZJ",
+  "title": "落樱之剑",
+  "author": "作者名",
+  "cover": "https://...",
+  "cover_file": "cover.jpg",
+  "description": "漫画简介...",
+  "sections": [
+    {
+      "idx": 1,
+      "title": "第1话",
+      "chapter_url": "https://manhua.sfacg.com/mh/LYZJ/3876/",
+      "dir": "ch_001_第1话",
+      "image_urls": [
+        "https://coldpic.sfacg.com/Pic/OnlineComic4/LYZJ/ZP/001/001_xxx.jpg",
+        "https://coldpic.sfacg.com/Pic/OnlineComic4/LYZJ/ZP/001/002_xxx.jpg"
       ]
     }
   ]

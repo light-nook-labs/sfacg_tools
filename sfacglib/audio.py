@@ -278,10 +278,14 @@ class Audio(Container):
             fetched = sum(1 for item in all_items if item.get('mp3_url'))
             logger.bind(force=True).info(f'预取完成: {fetched}/{len(all_items)} 成功')
 
+            self.cover = cover_url
+            cover_file = self._download_cover()
+
             catalog = {
                 'id': self.id,
                 'title': self.title,
                 'cover': cover_url,
+                'cover_file': cover_file,
                 'sections': sections,
             }
             save_json(catalog, self.dir_path / 'catalog.json')

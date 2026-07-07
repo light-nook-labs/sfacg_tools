@@ -49,9 +49,10 @@ opencode.json     # opencode project config
 
 ### Container
 
-- Provides `setup()` — fetches metadata, generates catalog.json
+- Provides `setup()` — fetches metadata, downloads cover, generates catalog.json
 - Provides `get_download_items()` — returns list of Items from catalog
 - Provides `download(ext, item_prefix)` — downloads all content to a directory
+- Provides `_download_cover()` — downloads cover image using PIL, saves as `cover.{ext}`
 - Manages catalog.json, info.md
 
 ### Section
@@ -71,6 +72,8 @@ novel = Novel(43708)
 vol = novel.create_vol(1)        # → NovelVolume
 chapter = vol.create_chapter(3)  # → NovelChapter
 review = novel.create_review()   # → Review (independent)
+
+comic = Comic('LYZJ')           # takes cid, not URL
 ```
 
 ## Download Flow
@@ -157,12 +160,14 @@ Download routing in `NovelChapter.download()`:
 
 `catalog.json` is generated during `Container.setup()` and stores the complete structure:
 - `id`, `title`, `author`, `cover` — metadata
-- `info_file` — filename for info.md
+- `cover_file` — local cover filename (e.g., `cover.jpg`)
+- `info_file` — filename for info.md (novel only)
 - `sections[]` — list of volumes/chapters:
   - `idx`, `title`, `vol_id?`, `dir`
   - `items[]` — list of chapters/pages:
     - `idx`, `title`, `chapter_id?`, `is_gif`, `file`
     - Audio: `mp3_url` (pre-fetched during setup)
+    - Comic: `image_urls[]` (pre-fetched during setup)
 
 `config.py` uses `pydantic-settings` for `.env` configuration via the `Settings` class.
 
@@ -170,6 +175,7 @@ Download routing in `NovelChapter.download()`:
 
 Audio has a simplified catalog (no `author`, `info_file`, or per-item `cover`):
 - `id`, `title`, `cover` — metadata (cover from chapter page `<img>`)
+- `cover_file` — local cover filename
 - `sections[]` — list of volumes:
   - `idx`, `title`, `dir`
   - `items[]` — list of chapters:

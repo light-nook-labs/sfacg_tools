@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from .base import Container, InvalidNovelError, Item, Section
-from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE
+from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE, URL_COMIC_INDEX
 from .fetcher import Fetcher
 from .selectors import Selectors
 from .utils import fix_url_protocol, save_json
@@ -159,26 +159,22 @@ class ComicChapter(Section):
 class Comic(Container):
     def __init__(
         self,
-        url: str,
+        cid: str,
         output_dir: str | Path | None = None,
         fetcher: Fetcher | None = None,
         selectors: Selectors | None = None,
     ):
         super().__init__(output_dir, fetcher)
-        self.url = url
-        self.id = self._extract_id(url)
+        self.cid = cid
+        self.id = cid
+        self.url = f'{URL_COMIC_INDEX}{cid}/'
         self.sel = selectors or Selectors()
 
         if not self.setup():
-            raise InvalidNovelError(f'HTTP错误或URL无效 (url={url})')
-
-    @staticmethod
-    def _extract_id(url: str) -> str:
-        match = re.search(r'/mh/(\w+)', url)
-        return match.group(1) if match else url
+            raise InvalidNovelError(f'HTTP错误或URL无效 (cid={cid})')
 
     def __repr__(self):
-        return f'<Comic: {self.url}>'
+        return f'<Comic: {self.cid}>'
 
     def setup(self) -> bool:
         try:
@@ -225,17 +221,7 @@ class Comic(Container):
             self.dir_path = self.output_dir / _sanitize_filename(self.title)
             self.dir_path.mkdir(parents=True, exist_ok=True)
 
-            info_md = f"""# {title}
-
-![封面]({self.cover})
-
-漫画地址： {self.url}
-
-作者：{author}
-
-{description}
-"""
-            (self.dir_path / 'info.md').write_text(info_md, encoding='utf-8')
+            cover_file = self._download_cover()
 
             a_tags = self.sel.find_all(soup, 'comic_info', 'chapter_list', url=self.url)
 
@@ -252,12 +238,23 @@ class Comic(Container):
                 safe_title = _sanitize_filename(ch_title)
                 dir_name = f'ch_{ch_idx:03d}_{safe_title}'
 
+                ch = ComicChapter(
+                    idx=ch_idx,
+                    title=ch_title,
+                    chapter_url=ch_url,
+                    fetcher=self.fetcher,
+                    sel=self.sel,
+                    dir_name=dir_name,
+                )
+                image_urls = [page.url for page in ch.get_items()]
+
                 sections.append(
                     {
                         'idx': ch_idx,
                         'title': ch_title,
                         'chapter_url': ch_url,
                         'dir': dir_name,
+                        'image_urls': image_urls,
                     }
                 )
 
@@ -266,7 +263,8 @@ class Comic(Container):
                 'title': self.title,
                 'author': self.author,
                 'cover': self.cover,
-                'info_file': 'info.md',
+                'cover_file': cover_file,
+                'description': description,
                 'sections': sections,
             }
             save_json(catalog, self.dir_path / 'catalog.json')

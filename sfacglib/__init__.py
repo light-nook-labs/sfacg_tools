@@ -37,6 +37,7 @@ from .config import (
     SELECTORS_PATH,
     TIMEOUT,
     URL_AUDIO,
+    URL_COMIC_INDEX,
     URL_NOVEL_INDEX,
     URL_REVIEW_DETAIL,
     URL_REVIEW_LIST,
