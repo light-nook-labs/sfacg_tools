@@ -1,5 +1,6 @@
-from .chatbot import ChatBot, interactive_chat
+from .chatbot import ChatBot, correct_ocr, interactive_chat
 from .engine import (
+    gif_to_frames,
     ocr_bytes,
     ocr_gif,
     ocr_image,
@@ -11,6 +12,8 @@ from .nlp import merge_wrapped_lines
 
 __all__ = [
     'ChatBot',
+    'correct_ocr',
+    'gif_to_frames',
     'interactive_chat',
     'merge_wrapped_lines',
     'ocr_bytes',

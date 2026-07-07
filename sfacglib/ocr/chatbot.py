@@ -488,3 +488,29 @@ def interactive_chat(base_url: str = '', api_key: str = '', model: str = ''):
             print(f'\nBot: {reply}\n')
         except Exception as e:
             print(f'\nError: {e}\n')
+
+
+def correct_ocr(text: str) -> str:
+    if not settings.llm_api_key:
+        logger.warning('No LLM API key configured, skipping correction')
+        return text
+
+    client = OpenAI(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url or 'https://api.openai.com/v1',
+    )
+    model = settings.llm_model or 'gpt-4o-mini'
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {'role': 'system', 'content': CORRECT_OCR_SYSTEM_PROMPT},
+                {'role': 'user', 'content': f'请纠正以下OCR文本：\n\n{text}'},
+            ],
+            temperature=0.1,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f'LLM correction failed: {e}')
+        return text
