@@ -1,3 +1,4 @@
+import shutil
 from enum import Enum
 from pathlib import Path
 
@@ -6,7 +7,10 @@ from pydantic_settings import BaseSettings
 PACKAGE_DIR = Path(__file__).parent
 PROJECT_DIR = PACKAGE_DIR.parent
 
+DEFAULT_DOWNLOAD_DIR = Path.home() / 'Downloads'
+
 _CONFIG_DIR = Path.home() / '.config' / 'sfacg'
+_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 MOBILE_BASE = 'https://m.sfacg.com'
 PC_BASE = 'https://book.sfacg.com'
@@ -79,9 +83,21 @@ URL_LOGIN_API_PC = f'{PASSPORT_BASE}/Ajax/QuickLogin.ashx'
 URL_LOGIN_API_MOB = f'{PASSPORT_BASE}/Ajax/QuickLoginCross.ashx'
 URL_CHECK_AUTH = f'{PC_BASE}/'
 
-SELECTORS_PATH: Path = PACKAGE_DIR / 'selectors.toml'
+SELECTORS_PATH: Path = _CONFIG_DIR / 'selectors.toml'
 COOKIE_PATH: Path = _CONFIG_DIR / '.cookies.json'
-AUDIOBOOKS_JSON: Path = PACKAGE_DIR / 'audiobooks.json'
+AUDIOBOOKS_JSON: Path = _CONFIG_DIR / 'audiobooks.json'
+
+FALLBACK_SELECTORS: Path = PACKAGE_DIR / 'selectors.toml'
+FALLBACK_AUDIOBOOKS: Path = PACKAGE_DIR / 'audiobooks.json'
+
+
+def _migrate_config():
+    for src, dst in [(FALLBACK_SELECTORS, SELECTORS_PATH), (FALLBACK_AUDIOBOOKS, AUDIOBOOKS_JSON)]:
+        if src.exists() and not dst.exists():
+            shutil.copy2(src, dst)
+
+
+_migrate_config()
 
 DEFAULT_DELAY: float = 0.2
 MAX_RETRIES: int = 3

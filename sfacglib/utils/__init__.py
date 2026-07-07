@@ -9,7 +9,7 @@ from loguru import logger
 from PIL import Image
 from tqdm import tqdm
 
-from .config import MOBILE_BASE
+from ..config import MOBILE_BASE
 
 T = TypeVar('T')
 

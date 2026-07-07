@@ -32,21 +32,19 @@ def _get_fetcher() -> Fetcher:
 
 def cmd_novel(args):
     from sfacglib.novel import Novel
+    from sfacglib.utils.convert import convert
 
     f = _get_fetcher()
-    tracker = ProgressTracker()
-    novel = Novel(args.nid, fetcher=f)
+    novel = Novel(args.nid, output_dir=args.output, fetcher=f)
     novel.download_novel(
-        path=args.output,
-        file_type=args.format,
-        tracker=tracker,
         start_chapter=args.start_chapter,
         end_chapter=args.end_chapter,
         chapter_range=args.chapters,
         volume_filter=args.volumes,
         download_reviews=args.reviews,
     )
-    tracker.close()
+    if args.format != 'md':
+        convert(novel.dir_path, formats=[args.format], fetcher=f)
     logger.bind(force=True).info(f'Done: {novel.title}')
 
 
@@ -66,25 +64,22 @@ def cmd_chapter(args):
 
 def cmd_comic(args):
     from sfacglib.comic import Comic
+    from sfacglib.utils.convert import convert
 
     f = _get_fetcher()
-    tracker = ProgressTracker()
-    comic = Comic(args.url, fetcher=f)
+    comic = Comic(args.url, output_dir=args.output, fetcher=f)
     comic.download(
-        path=args.output,
-        file_type=args.format,
-        local_images=not args.url_mode,
-        tracker=tracker,
         start_chapter=args.start_chapter,
         end_chapter=args.end_chapter,
         chapter_range=args.chapters,
     )
-    tracker.close()
+    if args.format != 'dir':
+        convert(comic.dir_path, formats=[args.format], fetcher=f)
     logger.bind(force=True).info(f'Done: {comic.title}')
 
 
 def cmd_convert(args):
-    from sfacglib.convert import convert_comic
+    from sfacglib.utils.convert import convert_comic
 
     f = _get_fetcher()
     formats = args.formats.split(',') if args.formats else ['html', 'epub', 'pdf']
@@ -95,17 +90,13 @@ def cmd_audio(args):
     from sfacglib.audio import Audio
 
     f = _get_fetcher()
-    tracker = ProgressTracker()
-    audio = Audio(args.id, fetcher=f)
+    audio = Audio(args.id, output_dir=args.output, fetcher=f)
     audio.download(
-        path=args.output,
-        tracker=tracker,
         start=args.start_chapter,
         end=args.end_chapter,
         range_str=args.chapters,
         filter_str=args.volumes,
     )
-    tracker.close()
     logger.bind(force=True).info(f'Done: {audio.title}')
 
 
@@ -117,9 +108,8 @@ def cmd_review(args):
     if not nid_match:
         logger.error('无法提取小说ID')
         return
-    novel = Novel(int(nid_match.group(1)), fetcher=f)
+    novel = Novel(int(nid_match.group(1)), output_dir=args.output, fetcher=f)
     novel.download_novel(
-        path=args.output,
         file_type='md',
         download_reviews=True,
     )
@@ -135,8 +125,15 @@ def cmd_audiolist(args):
 
 
 def cmd_status(args):
-    tracker = ProgressTracker()
-    tasks = tracker.list_tasks()
+    downloads = Path.home() / 'Downloads'
+    if not downloads.exists():
+        print('No downloads')
+        return
+    tasks = []
+    for db in downloads.rglob('progress.db'):
+        tracker = ProgressTracker(db)
+        tasks.extend(tracker.list_tasks())
+        tracker.close()
     if not tasks:
         print('No tasks')
     else:
@@ -144,32 +141,18 @@ def cmd_status(args):
         print('-' * 80)
         for t in tasks:
             print(f'{t["id"]:<20} {t["type"]:<8} {t["title"][:25]:<25} {t["done"]:>6} {t["total"]:>6} {t["status"]:<8}')
-    tracker.close()
 
 
 def cmd_cleanup(args):
-    tracker = ProgressTracker()
-    count = tracker.cleanup_done()
-    tracker.close()
-    logger.bind(force=True).info(f'清理完成，删除 {count} 个已完成任务')
-
-
-def cmd_app(args):
-    from sfacglib.ui import run_pc
-
-    run_pc()
-
-
-def cmd_mobile(args):
-    from sfacglib.ui import run_mobile
-
-    run_mobile(target=args.target)
-
-
-def cmd_web(args):
-    from sfacglib.ui import run_web
-
-    run_web(host=args.host, port=args.port)
+    downloads = Path.home() / 'Downloads'
+    if not downloads.exists():
+        return
+    total = 0
+    for db in downloads.rglob('progress.db'):
+        tracker = ProgressTracker(db)
+        total += tracker.cleanup_done()
+        tracker.close()
+    logger.bind(force=True).info(f'清理完成，删除 {total} 个已完成任务')
 
 
 def cmd_search(args):
@@ -270,9 +253,12 @@ def main():
 
     p_comic = sub.add_parser('comic', help='Download comic')
     p_comic.add_argument('url', help='Comic URL')
-    p_comic.add_argument('--format', '-f', default='dir', choices=['dir', 'html', 'epub', 'pdf'], help='Output format')
     p_comic.add_argument(
-        '--url-mode', action='store_true', help='Use URL instead of local images (HTML only, URLs may expire)'
+        '--format',
+        '-f',
+        default='dir',
+        choices=['dir', 'html', 'epub', 'pdf'],
+        help='Output format (converted from dir)',
     )
     p_comic.add_argument('--output', '-o', default='./')
     p_comic.add_argument('--start-chapter', '-sc', help='Start from this chapter (title or ID)')
@@ -310,18 +296,6 @@ def main():
 
     p_cleanup = sub.add_parser('cleanup', help='Clean up completed tasks')
     p_cleanup.set_defaults(func=cmd_cleanup)
-
-    p_app = sub.add_parser('app', help='Launch PC GUI')
-    p_app.set_defaults(func=cmd_app)
-
-    p_mobile = sub.add_parser('mobile', help='Launch mobile UI (Flet/Flutter)')
-    p_mobile.add_argument('--target', default='app', choices=['app', 'apk'], help='Target: app (web) or apk (Flutter)')
-    p_mobile.set_defaults(func=cmd_mobile)
-
-    p_web = sub.add_parser('web', help='Launch web UI')
-    p_web.add_argument('--host', default='127.0.0.1', help='Host to bind')
-    p_web.add_argument('--port', type=int, default=8888, help='Port to bind')
-    p_web.set_defaults(func=cmd_web)
 
     p_search = sub.add_parser('search', help='Search novels or comics by keyword')
     p_search.add_argument('keyword', help='Search keyword or novel ID (for --related/--author-works)')

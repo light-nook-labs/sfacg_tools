@@ -6,18 +6,14 @@ from pathlib import Path
 
 from loguru import logger
 
-from .config import PACKAGE_DIR
-
-DB_PATH = PACKAGE_DIR / 'progress.db'
-
 
 def _extract_id(url: str) -> str:
     match = re.search(r'/(\d+)/?$', url.rstrip('/'))
     return match.group(1) if match else url
 
 
-def _connect(db_path: str | Path | None = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH), check_same_thread=False)
+def _connect(db_path: str | Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.execute('PRAGMA journal_mode=WAL')
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
@@ -53,8 +49,9 @@ BATCH_SIZE = 20
 
 
 class ProgressTracker:
-    def __init__(self, db_path: str | Path | None = None):
-        self.db_path = db_path or DB_PATH
+    def __init__(self, db_path: str | Path):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = _connect(self.db_path)
         self._lock = threading.Lock()
         self._dirty = 0

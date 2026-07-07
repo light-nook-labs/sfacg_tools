@@ -5,11 +5,11 @@ from pathlib import Path
 
 from loguru import logger
 
-from .base import _sanitize_filename
+from ..base import _sanitize_filename
+from ..fetcher import Fetcher
+from ..models import Catalog, CatalogItem
+from . import fix_url_protocol
 from .epub import _MEDIA_TYPES
-from .fetcher import Fetcher
-from .models import Catalog, CatalogItem
-from .utils import fix_url_protocol
 
 _REPO_URL = 'https://github.com/light-nook-labs/sfacg'
 _ORG_AVATAR = 'https://avatars.githubusercontent.com/u/light-nook-labs'

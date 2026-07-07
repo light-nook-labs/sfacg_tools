@@ -13,7 +13,7 @@
 - 评论下载（长评 + 回复）
 - 搜索小说/漫画（关键词搜索、相关推荐、作者作品）
 - 格式转换（小说/漫画目录 → HTML / EPUB / PDF）
-- VIP 章节处理（去拼音 / OCR / LLM 纠错）
+- VIP 章节处理（OCR / LLM 纠错）
 - Cookie 持久化登录
 - 多线程并发下载
 
@@ -58,10 +58,7 @@ uv run python main.py search 43708 --author-works   # 作者其他作品
 # 转换格式（小说/漫画）
 uv run python main.py convert output/落樱之剑 -f html,epub,pdf
 
-# VIP GIF 去拼音（快速，0.2s）
-uv run python main.py ocr-preprocess input.gif -o output.png
-
-# VIP GIF OCR（完整，~5s）
+# VIP GIF OCR（~5s/张）
 uv run python main.py ocr input.gif -o output.txt
 
 # OCR 纠错（需配置 .env）
@@ -138,7 +135,7 @@ uv run python main.py convert <dir> -f <formats>
 
 ```python
 # Python API
-from sfacglib.convert import convert
+from sfacglib.utils.convert import convert
 
 convert('output/小说目录', formats=['html', 'epub'])  # 小说
 convert('output/漫画目录', formats=['html', 'epub', 'pdf'])  # 漫画
@@ -168,7 +165,7 @@ SFACG 需要 Cookie 登录：
 
 ### ChatBot Agent
 
-`chatbot.py` 实现了一个 Agent（不仅仅是聊天机器人），可以陪你聊天，也可以通过自然语言理解意图，自动执行简单任务。复杂的任务会输出命令让用户自行运行。这个Agent在OCR流水线中实现最后一步llm纠正。
+`ocr/chatbot.py` 实现了一个 Agent（不仅仅是聊天机器人），可以陪你聊天，也可以通过自然语言理解意图，自动执行简单任务。复杂的任务会输出命令让用户自行运行。这个Agent在OCR流水线中实现最后一步llm纠正。
 
 ```bash
 $ uv run python main.py chat
@@ -227,20 +224,20 @@ You: quit
 
 ## VIP 章节与 OCR
 
-VIP 章节分两种类型：
+VIP 章节分三种模式（`vip_mode` 字段）：
 
-| 类型 | 目录图标 | 下载格式 | 说明 |
+| 模式 | 目录图标 | 下载格式 | 说明 |
 |------|---------|---------|------|
-| 加密 VIP | 无图标 | `.gif` | 需 OCR 提取文本 |
-| 图片 VIP | `<span class="icn">&#xe905;</span>` | `.md` | 直接获取文本，内嵌图片 |
+| `''` (free) | 无图标 | 正常文本 | 免费章节 |
+| `'encrypted'` | `.icn_vip` | `.gif` | 加密 VIP，需 OCR 提取文本 |
+| `'image'` | `.icn` + `\ue905` | `.md` | 图片 VIP，直接获取文本内嵌图片 |
 
-检测逻辑：目录页中，VIP 章节的 `<a>` 标签如果包含 `.icn` 子元素且内容为 `\ue905`，则为图片 VIP（不加密）。
+检测逻辑：`Novel._parse_pc_catalog()` 检查 `.icn_vip` 和 `.icn` span 内容。
 
-### 三种处理方式（仅加密 VIP 需要）
+### OCR 处理方式（仅加密 VIP 需要）
 
 | 方式 | 2014 低配 PC | 现代 PC | 输出 | 适用场景 |
 |------|-------------|---------|------|----------|
-| 仅去拼音 | ~0.2s | ~0.1s | 图像 | 只需阅读 |
 | 本地 OCR | ~39s | ~5s | 文本 | 需要文字版 |
 | OCR + LLM 纠正 | ~66s | ~30s | 纠正文本 | 高质量需求 |
 
@@ -263,23 +260,6 @@ uv sync --extra ocr --extra gpu
 > [!NOTE]
 > 需要 NVIDIA GPU + cuDNN 9.* + CUDA 13.*。安装后重启终端即可自动启用。
 > GPU 加速对当前行切分 OCR 模型提升有限（~1.0x），主要收益来自现代 CPU 的多核性能。
-
-### 去拼音 API
-
-```bash
-# CLI
-uv run python main.py ocr-preprocess input.gif -o output.png
-```
-
-```python
-# Python API
-from sfacglib.ocr import remove_pinyin_gif, remove_pinyin_to_bytes
-
-gif_bytes = Path('chapter.gif').read_bytes()
-
-img = remove_pinyin_gif(gif_bytes)        # PIL Image
-png = remove_pinyin_to_bytes(gif_bytes)   # bytes
-```
 
 ### OCR 流程
 
@@ -368,9 +348,17 @@ uv run python main.py ocr-fix ./ocr_output/ --pattern "*.txt" -c "玄幻小说"
 > [!IMPORTANT]
 > 需要在 `.env` 中配置 `CHATBOT_BASE_URL`、`CHATBOT_API_KEY`、`CHATBOT_MODEL`。参考 `.sample.env`。
 
-## CSS 选择器
+## 配置文件
 
-所有选择器位于 `sfacglib/selectors.toml`。失效时更新 TOML 即可，无需改代码。
+所有持久化配置存储在 `~/.config/sfacg/`：
+
+| 文件 | 说明 |
+|------|------|
+| `selectors.toml` | CSS 选择器（失效时更新即可，无需改代码） |
+| `audiobooks.json` | 有声小说目录缓存 |
+| `.cookies.json` | 登录 Cookie（0600 权限） |
+
+包目录中保留 `selectors.toml` 和 `audiobooks.json` 的副本作为备用值，首次运行时自动迁移到配置目录。
 
 ## Pydantic 模型
 
@@ -408,23 +396,30 @@ print(settings.llm_api_key)
 sfacglib/
   models/           # Pydantic 数据模型（SearchItem, Catalog 等）
   base.py           # 抽象基类：Container, Section, Item + _filter_items
-  config.py         # 集中常量 + Pydantic Settings
-  fetcher.py        # HTTP 请求（轮换 UA、重试、限速、认证）
+  config.py         # 集中常量 + Pydantic Settings + 配置目录迁移
+  fetcher.py        # HTTP 请求（轮换 UA、重试、限速、双会话认证）
   auth.py           # Cookie 管理（GetLoginInfo API 验证）
-  selectors.py      # CSS 选择器注册表
-  selectors.toml    # CSS 选择器定义
-  novel.py          # 小说下载器 + NovelChapter/VIP处理
-  comic.py          # 漫画下载器
-  audio.py          # 有声下载器
-  epub.py           # EPUB 生成
-  convert.py        # 格式转换（小说/漫画 → HTML/EPUB/PDF）
+  selectors.py      # CSS 选择器注册表（tomllib）
+  selectors.toml    # CSS 选择器定义（备用副本）
+  novel.py          # 小说下载器（Novel/NovelVolume/NovelChapter/ReviewComment）
+  comic.py          # 漫画下载器（Comic/ComicChapter）
+  audio.py          # 有声下载器（Audio/AudioVolume/AudioChapter）
+  audiobooks.json   # 有声目录缓存（备用副本）
   search.py         # 搜索 API（关键词、相关推荐、作者作品）
-  ocr/              # OCR 包
-    engine.py       # OCR 引擎（RapidOCR、去拼音、rec_only、并行）
-    chatbot.py      # Agent（tool calling、OCR 纠错）
   nlp.py            # NLP 后处理（合并断行）
-  progress.py       # 进度追踪（SQLite）
-  utils.py          # 共享工具
+  progress.py       # 进度追踪（SQLite，批量提交）
+  utils/            # 共享工具
+    __init__.py     # sanitize_filename, fix_url_protocol, validate_gif, run_tasks
+    convert.py      # 格式转换（小说/漫画 → HTML/EPUB/PDF）
+    epub.py         # EPUB 生成
+  ocr/              # OCR 包
+    __init__.py     # 导出 ChatBot, ocr_gif, remove_pinyin 等
+    engine.py       # OCR 引擎（RapidOCR、去拼音、rec_only、并行、GPU 自动检测）
+    chatbot.py      # Agent（tool calling、OCR 纠错）
+  ui/               # 界面
+    pc/             # CustomTkinter 桌面端
+    mobile/         # Flet 移动端
+    web/            # FastAPI Web 端
 
 main.py             # CLI 入口
 .env                # 配置（Cookie、Chatbot API）
@@ -457,7 +452,8 @@ main.py             # CLI 入口
           "idx": 1,
           "title": "第一章",
           "url": "https://...",
-          "file": "vol_001_第一卷/ch_001_第一章.md"
+          "file": "vol_001_第一卷/ch_001_第一章.md",
+          "vip_mode": ""
         }
       ]
     }

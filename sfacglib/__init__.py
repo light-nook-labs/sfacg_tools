@@ -38,7 +38,6 @@ from .config import (
     TIMEOUT,
     URL_AUDIO,
     URL_NOVEL_INDEX,
-    URL_NOVEL_MENU,
     URL_REVIEW_DETAIL,
     URL_REVIEW_LIST,
     VIP_IMAGE_WIDTH,
@@ -51,10 +50,9 @@ from .config import (
     VipMode,
     settings,
 )
-from .epub import convert_html_to_epub, convert_md_to_epub, download_epub
 from .fetcher import Fetcher
 from .models import Catalog, CatalogItem, CatalogSection, SearchItem
-from .novel import Novel, NovelChapter, process_vip_chapter
+from .novel import Novel, NovelChapter, Review
 from .ocr import (
     ChatBot,
     interactive_chat,
@@ -84,6 +82,7 @@ from .search import (
 )
 from .selectors import SelectorError, Selectors
 from .utils import mobile_url, parse_volume_ul, run_tasks, sanitize_filename, validate_gif
+from .utils.epub import convert_html_to_epub, convert_md_to_epub, download_epub
 
 __all__ = [
     'API_BOOK',
@@ -128,7 +127,6 @@ __all__ = [
     'parse_volume_ul',
     'predictive_comic',
     'predictive_novel',
-    'process_vip_chapter',
     'remove_pinyin',
     'remove_pinyin_gif',
     'remove_pinyin_to_bytes',

@@ -1,11 +1,14 @@
-import random
 import re
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 from loguru import logger
+from tqdm import tqdm
 
 from .base import Container, Item, Section
 from .config import (
@@ -15,143 +18,20 @@ from .config import (
     OCR_WORKERS,
     PC_BASE,
     URL_NOVEL_INDEX,
-    URL_NOVEL_MENU,
     URL_REVIEW_DETAIL,
-    VIP_DELAY_RANGE,
     VIP_IMAGE_WIDTH,
     VIP_RETRY_DELAYS,
     VipMode,
     settings,
 )
 from .fetcher import Fetcher
-from .progress import _extract_id
+from .models import Catalog, CatalogItem, CatalogSection
+from .progress import ProgressTracker, _extract_id
 from .selectors import SelectorError, Selectors
-from .utils import fix_url_protocol, mobile_url, parse_volume_ul, validate_gif
+from .utils import fix_url_protocol, validate_gif
+from .utils import sanitize_filename as _sanitize_filename
 
 ICN_IMG = '\ue905'
-
-
-def _vip_rate_limit(fetcher: Fetcher | None = None):
-    if fetcher:
-        fetcher.rate_limiter.wait('vip.sfacg.com')
-    else:
-        delay = random.uniform(*VIP_DELAY_RANGE)
-        time.sleep(delay)
-
-
-def llm_correct(text: str, api_key: str = '', base_url: str = '', model: str = '') -> str:
-    import requests
-
-    api_key = api_key or settings.llm_api_key
-    base_url = base_url or settings.llm_base_url or 'https://api.openai.com/v1'
-    model = model or settings.llm_model or 'gpt-4o-mini'
-
-    if not api_key:
-        logger.warning('No LLM API key configured, skipping correction')
-        return text
-
-    try:
-        resp = requests.post(
-            f'{base_url}/chat/completions',
-            headers={
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json',
-            },
-            json={
-                'model': model,
-                'messages': [
-                    {'role': 'system', 'content': CORRECT_OCR_SYSTEM_PROMPT},
-                    {'role': 'user', 'content': f'请纠正以下OCR文本：\n\n{text}'},
-                ],
-                'temperature': 0.1,
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data['choices'][0]['message']['content'].strip()
-    except Exception as e:
-        logger.error(f'LLM correction failed: {e}')
-        return text
-
-
-def process_vip_chapter(
-    image_url: str,
-    mode: VipMode = VipMode.OCR,
-    save_dir: Path | None = None,
-    workers: int = OCR_WORKERS,
-    llm_api_key: str = '',
-    llm_base_url: str = '',
-    llm_model: str = '',
-    fetcher: Fetcher | None = None,
-) -> tuple[str, list[Path]]:
-    fetcher = fetcher or Fetcher()
-
-    from urllib.parse import parse_qs, urlparse
-
-    parsed = urlparse(image_url)
-    qs = parse_qs(parsed.query)
-    expected_w = int(qs.get('w', [0])[0])
-
-    gif_bytes = b''
-    for attempt in range(1 + len(VIP_RETRY_DELAYS)):
-        if attempt > 0:
-            delay = VIP_RETRY_DELAYS[attempt - 1]
-            logger.warning(f'VIP retry {attempt}/{len(VIP_RETRY_DELAYS)} after {delay}s...')
-            time.sleep(delay)
-
-        _vip_rate_limit(fetcher)
-        logger.info(f'Downloading VIP image (attempt {attempt + 1}): {image_url}')
-        resp = fetcher.get(image_url, vip=True)
-        gif_bytes = resp.content
-
-        valid, info = validate_gif(gif_bytes, expected_w)
-        if valid:
-            logger.info(f'VIP image OK: {info}')
-            break
-        logger.warning(f'VIP image invalid ({info}), retrying...')
-
-    valid, info = validate_gif(gif_bytes, expected_w)
-    if not valid:
-        raise ValueError(f'VIP图片获取失败: {info} ({image_url})')
-
-    if save_dir:
-        save_dir = Path(save_dir)
-        save_dir.mkdir(parents=True, exist_ok=True)
-        gif_path = save_dir / 'chapter.gif'
-        gif_path.write_bytes(gif_bytes)
-
-    if mode == VipMode.RAW:
-        from .ocr import gif_to_frames
-
-        frames = gif_to_frames(gif_bytes)
-        if save_dir is None:
-            save_dir = Path(tempfile.mkdtemp(prefix='sfacg_vip_'))
-            logger.info(f'Created temp directory: {save_dir} (caller responsible for cleanup)')
-        frame_paths = []
-        for i, frame in enumerate(frames):
-            frame_path = save_dir / f'frame_{i:03}.png'
-            frame.save(frame_path)
-            frame_paths.append(frame_path)
-        logger.info(f'Saved {len(frame_paths)} frames to {save_dir}')
-        return '', frame_paths
-
-    from .ocr import ocr_gif
-
-    logger.info('Running OCR (fast)...')
-    text = ocr_gif(gif_bytes, workers=workers)
-
-    if mode == VipMode.LLM and text:
-        logger.info('Running LLM correction...')
-        text = llm_correct(text, api_key=llm_api_key, base_url=llm_base_url, model=llm_model)
-
-    if text:
-        logger.info(f'Extracted {len(text)} chars')
-    else:
-        logger.warning('No text extracted from VIP image')
-
-    frame_paths = []
-    return text, frame_paths
 
 
 class NovelChapter(Item):
@@ -203,27 +83,6 @@ class NovelChapter(Item):
         logger.info(f'VIP GIF: {gif_path.name} ({len(gif_bytes)} bytes)')
 
     def get_chapter_content(self) -> tuple[str, str]:
-        if 'book' not in self.url:
-            soup = self._soup()
-            title_tag = soup.title
-            if title_tag and ' - ' in title_tag.get_text():
-                title = title_tag.get_text().split(' - ')[1]
-            else:
-                title = self.sel.find_text(soup, 'chapter_mobile', 'title', url=self.url) or '未知章节'
-            self.title = title
-
-            content_html = self.sel.find(soup, 'chapter_mobile', 'content_container', url=self.url)
-            if content_html and content_html.has_attr('style'):
-                del content_html['style']
-
-            content_md = f'### {title}\n\n'
-            if content_html:
-                content_md += self._parse_children(content_html)
-
-            content_md = content_md.lstrip()
-            html_str = f'<div class="ch"><h3>{title}</h3>{str(content_html) if content_html else ""}</div>'
-            return content_md, html_str
-
         soup = self._soup()
 
         if self._is_vip(soup):
@@ -344,11 +203,7 @@ class NovelChapter(Item):
         img_url = self._build_image_url(soup)
         logger.info(f'VIP chapter [OCR]: {img_url}')
 
-        text, frame_paths = process_vip_chapter(
-            image_url=img_url,
-            mode=VipMode.OCR,
-            fetcher=self.fetcher,
-        )
+        text = self._process_vip(img_url, mode=VipMode.OCR)
 
         if text:
             content_md = f'### {title}\n\n{other_info}\n\n{text}\n\n'
@@ -360,6 +215,108 @@ class NovelChapter(Item):
             content_html = f'<div class="ch"><h3>{title}</h3><p>{other_info}</p><img src="{img_url}"></div>'
 
         return content_md, content_html
+
+    @staticmethod
+    def _vip_rate_limit(fetcher: Fetcher):
+        fetcher.rate_limiter.wait('vip.sfacg.com')
+
+    @staticmethod
+    def _llm_correct(text: str) -> str:
+        import requests
+
+        api_key = settings.llm_api_key
+        base_url = settings.llm_base_url or 'https://api.openai.com/v1'
+        model = settings.llm_model or 'gpt-4o-mini'
+
+        if not api_key:
+            logger.warning('No LLM API key configured, skipping correction')
+            return text
+
+        try:
+            resp = requests.post(
+                f'{base_url}/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {api_key}',
+                    'Content-Type': 'application/json',
+                },
+                json={
+                    'model': model,
+                    'messages': [
+                        {'role': 'system', 'content': CORRECT_OCR_SYSTEM_PROMPT},
+                        {'role': 'user', 'content': f'请纠正以下OCR文本：\n\n{text}'},
+                    ],
+                    'temperature': 0.1,
+                },
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data['choices'][0]['message']['content'].strip()
+        except Exception as e:
+            logger.error(f'LLM correction failed: {e}')
+            return text
+
+    def _process_vip(
+        self,
+        image_url: str,
+        mode: VipMode = VipMode.OCR,
+        workers: int = OCR_WORKERS,
+    ) -> str:
+        parsed = urlparse(image_url)
+        qs = parse_qs(parsed.query)
+        expected_w = int(qs.get('w', [0])[0])
+
+        gif_bytes = b''
+        for attempt in range(1 + len(VIP_RETRY_DELAYS)):
+            if attempt > 0:
+                delay = VIP_RETRY_DELAYS[attempt - 1]
+                logger.warning(f'VIP retry {attempt}/{len(VIP_RETRY_DELAYS)} after {delay}s...')
+                time.sleep(delay)
+
+            self._vip_rate_limit(self.fetcher)
+            logger.info(f'Downloading VIP image (attempt {attempt + 1}): {image_url}')
+            resp = self.fetcher.get(image_url, vip=True)
+            gif_bytes = resp.content
+
+            valid, info = validate_gif(gif_bytes, expected_w)
+            if valid:
+                logger.info(f'VIP image OK: {info}')
+                break
+            logger.warning(f'VIP image invalid ({info}), retrying...')
+
+        valid, info = validate_gif(gif_bytes, expected_w)
+        if not valid:
+            raise ValueError(f'VIP图片获取失败: {info} ({image_url})')
+
+        if mode == VipMode.RAW:
+            from .ocr import gif_to_frames
+
+            frames = gif_to_frames(gif_bytes)
+            save_dir = Path(tempfile.mkdtemp(prefix='sfacg_vip_'))
+            logger.info(f'Created temp directory: {save_dir} (caller responsible for cleanup)')
+            frame_paths = []
+            for i, frame in enumerate(frames):
+                frame_path = save_dir / f'frame_{i:03}.png'
+                frame.save(frame_path)
+                frame_paths.append(frame_path)
+            logger.info(f'Saved {len(frame_paths)} frames to {save_dir}')
+            return ''
+
+        from .ocr import ocr_gif
+
+        logger.info('Running OCR (fast)...')
+        text = ocr_gif(gif_bytes, workers=workers)
+
+        if mode == VipMode.LLM and text:
+            logger.info('Running LLM correction...')
+            text = self._llm_correct(text)
+
+        if text:
+            logger.info(f'Extracted {len(text)} chars')
+        else:
+            logger.warning('No text extracted from VIP image')
+
+        return text
 
 
 class NovelVolume(Section):
@@ -447,101 +404,155 @@ class ReviewSection(Section):
         return self.comments
 
 
-def _parse_pc_catalog(soup: BeautifulSoup, fetcher: Fetcher, sel: Selectors, nid: str) -> list[NovelVolume]:
-    volumes: list[NovelVolume] = []
-    vol_idx = 0
+class Review(Container):
+    def __init__(
+        self,
+        nid: int,
+        title: str,
+        output_dir: str | Path,
+        fetcher: Fetcher,
+    ):
+        self.nid = str(nid)
+        super().__init__(output_dir=output_dir, fetcher=fetcher)
+        self.title = title
+        self.id = self.nid
+        self.author = ''
+        self.intro = f'《{self.title}》的书评'
+        self.cover = ''
+        self.dir_path = self.output_dir / 'reviews'
+        self.dir_path.mkdir(parents=True, exist_ok=True)
+        self.tracker = ProgressTracker(self.dir_path / 'progress.db')
+        info_md, info_html = self.get_info()
+        (self.dir_path / 'info.md').write_text(info_md, encoding='utf-8')
+        catalog = Catalog(id=self.id, title=self.title, author=self.author, cover=self.cover, intro=self.intro)
+        catalog.save(self.dir_path / 'catalog.json')
 
-    for hd in soup.select('.catalog-hd'):
-        vol_idx += 1
-        vol_title_tag = hd.select_one('.catalog-title')
-        vol_title = vol_title_tag.get_text().strip() if vol_title_tag else '未命名卷'
-        chapters: list[NovelChapter] = []
-        ch_idx = 0
+    @classmethod
+    def from_novel(cls, novel: 'Novel') -> 'Review':
+        return cls(nid=novel.nid, title=novel.title, output_dir=novel.dir_path, fetcher=novel.fetcher)
 
-        for sib in hd.next_siblings:
-            if not hasattr(sib, 'name') or not sib.name:
+    def get_info(self) -> tuple[str, str]:
+        info_md = f'# 《{self.title}》书评\n'
+        info_html = f'<!DOCTYPE html><html><head><meta charset="utf-8"><title>{self.title} 书评</title></head><body><h1>《{self.title}》书评</h1></body></html>'
+        return info_md, info_html
+
+    def get_sections(self) -> list[ReviewSection]:
+        review_ids = self._get_review_ids()
+        comments = []
+        for idx, cid in enumerate(reversed(review_ids), start=1):
+            comments.append(ReviewComment(idx, cid, self.title, self.fetcher))
+        return [ReviewSection(1, '长评', comments)] if comments else []
+
+    def _download_item(self, item: ReviewComment, save_path: Path, pbar=None, lock=None):
+        item.download(save_path, pbar, lock)
+
+    def download(self, **kwargs):
+        self.dir_path.mkdir(parents=True, exist_ok=True)
+
+        review_ids = self._get_review_ids()
+        all_items = []
+        for idx, cid in enumerate(reversed(review_ids), start=1):
+            all_items.append(ReviewComment(idx, cid, self.title, self.fetcher))
+
+        if not all_items:
+            logger.error('没有可下载的书评')
+            return
+
+        skip_count = 0
+        to_download = []
+        for item in all_items:
+            safe_title = _sanitize_filename(item.title)
+            fname = f'review_{item.idx:03d}_{safe_title}.md'
+            save_path = self.dir_path / fname
+            if save_path.exists():
+                skip_count += 1
                 continue
-            if 'catalog-hd' in str(sib.get('class', '')):
+            to_download.append((item, save_path))
+
+        if skip_count:
+            logger.bind(force=True).info(f'跳过已下载: {skip_count} 项')
+
+        if not to_download:
+            logger.bind(force=True).info('所有书评已下载完成')
+            self._save_catalog(all_items)
+            return self.dir_path
+
+        logger.info(f'共 {len(to_download)} 项待下载')
+
+        with ProgressTracker(self.dir_path / 'progress.db') as tracker:
+            pbar = tqdm(total=len(to_download), desc=self.title, unit='item')
+            lock = threading.Lock()
+
+            def _do_download(item_and_path):
+                item, path = item_and_path
+                try:
+                    self._download_item(item, path, None, lock)
+                except Exception as e:
+                    logger.error(f'下载失败: {item.title} - {e}')
+                finally:
+                    with lock:
+                        pbar.update(1)
+
+            with ThreadPoolExecutor(max_workers=50) as executor:
+                list(executor.map(_do_download, to_download))
+
+            pbar.close()
+            tracker.mark_task_done(f'review_{self.nid}')
+
+        logger.info(f'保存到 {self.dir_path}')
+        self._save_catalog(all_items)
+        return self.dir_path
+
+    def _save_catalog(self, all_items: list[ReviewComment]):
+        catalog = Catalog(id=self.id, title=self.title, author=self.author, cover=self.cover, intro=self.intro)
+        catalog.sections.append(
+            CatalogSection(
+                idx=1,
+                title='长评',
+                items=[
+                    CatalogItem(
+                        idx=item.idx,
+                        title=item.title,
+                        url='',
+                        file=f'review_{item.idx:03d}_{_sanitize_filename(item.title)}.md',
+                    )
+                    for item in all_items
+                ],
+            )
+        )
+        catalog.save(self.dir_path / 'catalog.json')
+
+    def _get_review_ids(self, max_pages: int = 100) -> list[str]:
+        page = 0
+        review_ids: list[str] = []
+        while page < max_pages:
+            params = {
+                'op': 'getcmtlist',
+                'nid': self.nid,
+                'so': 'addtime',
+                'pi': page,
+                'ctype': 'long',
+                'len': 60,
+                '_': int(time.time() * 1000),
+            }
+            data = self.fetcher.get_json(API_HTML5, params=params)
+            cmts = data.get('Cmts', []) if isinstance(data, dict) else []
+            if not cmts:
                 break
-            if 'catalog-list' not in str(sib.get('class', '')):
-                continue
-
-            for a in sib.select('a[href]'):
-                href = a.get('href', '')
-                if not href:
-                    continue
-                ch_idx += 1
-                is_vip = a.select_one('.icn_vip') is not None
-                has_img = a.select_one('.icn') and a.select_one('.icn').get_text() == ICN_IMG
-                title = a.get('title', '') or a.get_text().replace('VIP', '').strip()
-
-                if is_vip and has_img:
-                    vip_mode = 'image'
-                elif is_vip:
-                    vip_mode = 'encrypted'
-                else:
-                    vip_mode = ''
-
-                if href.startswith('/'):
-                    url = f'{PC_BASE}{href}'
-                else:
-                    url = mobile_url(href)
-
-                chapters.append(
-                    NovelChapter(
-                        ch_idx,
-                        title,
-                        url,
-                        fetcher,
-                        sel,
-                        nid=nid,
-                        vip_mode=vip_mode,
-                    )
-                )
-
-        volumes.append(NovelVolume(vol_idx, vol_title, chapters))
-
-    return volumes
-
-
-def _parse_mobile_catalog(soup: BeautifulSoup, fetcher: Fetcher, sel: Selectors, nid: str) -> list[NovelVolume]:
-    volumes: list[NovelVolume] = []
-    vol_idx = 0
-
-    for vol_tag in soup.find_all(class_='mulu'):
-        vol_idx += 1
-        vol_title = vol_tag.string or '未命名卷'
-        chapters: list[NovelChapter] = []
-        ul_tag = parse_volume_ul(vol_tag)
-        if ul_tag:
-            ch_idx = 0
-            for a in ul_tag.find_all('a'):
-                href = a.get('href', '')
-                if href:
-                    ch_idx += 1
-                    chapters.append(
-                        NovelChapter(
-                            ch_idx,
-                            a.get_text(),
-                            mobile_url(href),
-                            fetcher,
-                            sel,
-                            nid=nid,
-                        )
-                    )
-        volumes.append(NovelVolume(vol_idx, vol_title, chapters))
-
-    return volumes
+            review_ids.extend(str(item.get('CommentID', '')) for item in cmts if item.get('CommentID'))
+            page += 1
+        return review_ids
 
 
 class Novel(Container):
     def __init__(
         self,
         nid: int,
+        output_dir: str | Path | None = None,
         fetcher: Fetcher | None = None,
         selectors: Selectors | None = None,
     ):
-        super().__init__(fetcher)
+        super().__init__(output_dir, fetcher)
         self.nid = str(nid)
         self.id = str(nid)
         self.title: str = ''
@@ -550,6 +561,8 @@ class Novel(Container):
         self.cover: str = ''
         self.sel = selectors or Selectors()
         self.fetcher.auto_auth()
+        self.get_info()
+        self._setup()
 
     def get_info(self) -> tuple[str, str]:
         index_url = f'{URL_NOVEL_INDEX}{self.nid}'
@@ -648,23 +661,78 @@ Generated by [SFACG Spider](https://github.com/light-nook-labs/sfacg)
         html = self.fetcher.get_html(pc_url)
         soup = BeautifulSoup(html, 'html.parser')
 
-        if soup.select('.catalog-hd'):
-            return _parse_pc_catalog(soup, self.fetcher, self.sel, self.nid)
+        if not soup.select('.catalog-hd'):
+            raise SelectorError(
+                page='novel_catalog',
+                field='catalog-hd',
+                selector='.catalog-hd',
+                url=pc_url,
+                description='PC catalog not found (mobile catalog is no longer supported)',
+            )
 
-        menu_url = f'{URL_NOVEL_MENU}{self.nid}'
-        html = self.fetcher.get_html(menu_url)
-        soup = BeautifulSoup(html, 'html.parser')
-        return _parse_mobile_catalog(soup, self.fetcher, self.sel, self.nid)
+        return self._parse_pc_catalog(soup)
+
+    def _parse_pc_catalog(self, soup: BeautifulSoup) -> list[NovelVolume]:
+        volumes: list[NovelVolume] = []
+        vol_idx = 0
+
+        for hd in soup.select('.catalog-hd'):
+            vol_idx += 1
+            vol_title_tag = hd.select_one('.catalog-title')
+            vol_title = vol_title_tag.get_text().strip() if vol_title_tag else '未命名卷'
+            chapters: list[NovelChapter] = []
+            ch_idx = 0
+
+            for sib in hd.next_siblings:
+                if not hasattr(sib, 'name') or not sib.name:
+                    continue
+                if 'catalog-hd' in str(sib.get('class', '')):
+                    break
+                if 'catalog-list' not in str(sib.get('class', '')):
+                    continue
+
+                for a in sib.select('a[href]'):
+                    href = a.get('href', '')
+                    if not href:
+                        continue
+                    ch_idx += 1
+                    is_vip = a.select_one('.icn_vip') is not None
+                    has_img = a.select_one('.icn') and a.select_one('.icn').get_text() == ICN_IMG
+                    title = a.get('title', '') or a.get_text().replace('VIP', '').strip()
+
+                    if is_vip and has_img:
+                        vip_mode = 'image'
+                    elif is_vip:
+                        vip_mode = 'encrypted'
+                    else:
+                        vip_mode = ''
+
+                    if href.startswith('/'):
+                        url = f'{PC_BASE}{href}'
+                    else:
+                        url = href
+
+                    chapters.append(
+                        NovelChapter(
+                            ch_idx,
+                            title,
+                            url,
+                            self.fetcher,
+                            self.sel,
+                            nid=self.nid,
+                            vip_mode=vip_mode,
+                        )
+                    )
+
+            volumes.append(NovelVolume(vol_idx, vol_title, chapters))
+
+        return volumes
 
     def _download_item(self, item: 'NovelChapter', save_path: Path, pbar=None, lock=None):
         item.download(save_path, pbar, lock)
 
     def download_novel(
         self,
-        path: str | Path = './',
-        ext: str | None = None,
-        file_type: str | None = None,
-        tracker=None,
         start: str | None = None,
         end: str | None = None,
         range_str: str | None = None,
@@ -674,16 +742,19 @@ Generated by [SFACG Spider](https://github.com/light-nook-labs/sfacg)
         chapter_range: str | None = None,
         volume_filter: str | None = None,
         download_reviews: bool = False,
+        skip_novel: bool = False,
         **kwargs,
     ):
-        ext = ext or file_type or 'md'
         start = start or start_chapter
         end = end or end_chapter
         range_str = range_str or chapter_range
         filter_str = filter_str or volume_filter
-        return self.download(
-            path=path, ext=ext, tracker=tracker, start=start, end=end, range_str=range_str, filter_str=filter_str
-        )
+        result = None
+        if not skip_novel:
+            result = self.download(start=start, end=end, range_str=range_str, filter_str=filter_str)
+        if download_reviews:
+            self._download_reviews()
+        return result
 
     def _get_reviews(self) -> ReviewSection:
         review_ids = self._get_review_ids()
@@ -692,62 +763,44 @@ Generated by [SFACG Spider](https://github.com/light-nook-labs/sfacg)
             comments.append(ReviewComment(idx, cid, self.title, self.fetcher))
         return ReviewSection(1, '长评', comments)
 
-    def _get_review_ids(self, max_pages: int = 100) -> list[str]:
-        page = 0
-        review_ids: list[str] = []
-        while page < max_pages:
-            params = {
-                'op': 'getcmtlist',
-                'nid': self.nid,
-                'so': 'addtime',
-                'pi': page,
-                'ctype': 'long',
-                'len': 60,
-                '_': int(time.time() * 1000),
-            }
-            data = self.fetcher.get_json(API_HTML5, params=params)
-            cmts = data.get('Cmts', []) if isinstance(data, dict) else []
-            if not cmts:
-                break
-            review_ids.extend(str(item.get('CommentID', '')) for item in cmts if item.get('CommentID'))
-            page += 1
-        return review_ids
+    def _download_reviews(self):
+        Review.from_novel(self).download()
 
+    @classmethod
+    def ocr_novel_gifs(cls, nid: int, path: str | Path = './'):
+        from .ocr import ocr_gif as ocr_gif_fast
 
-def ocr_novel_gifs(nid: int, path: str | Path = './'):
-    from .ocr import ocr_gif as ocr_gif_fast
+        path = Path(path)
+        title_dirs = list(path.glob(f'*{nid}*'))
+        if not title_dirs:
+            logger.error(f'No novel directory found for nid={nid} in {path}')
+            return
+        novel_dir = title_dirs[0]
 
-    path = Path(path)
-    title_dirs = list(path.glob(f'*{nid}*'))
-    if not title_dirs:
-        logger.error(f'No novel directory found for nid={nid} in {path}')
-        return
-    novel_dir = title_dirs[0]
+        gif_files = sorted(novel_dir.rglob('*.gif'))
+        if not gif_files:
+            logger.info('No GIF files found')
+            return
 
-    gif_files = sorted(novel_dir.rglob('*.gif'))
-    if not gif_files:
-        logger.info('No GIF files found')
-        return
+        logger.info(f'Found {len(gif_files)} GIF files to OCR')
 
-    logger.info(f'Found {len(gif_files)} GIF files to OCR')
+        for gif_path in gif_files:
+            md_path = gif_path.with_suffix('.md')
+            if md_path.exists():
+                logger.info(f'Skip (already OCR): {gif_path.name}')
+                continue
 
-    for gif_path in gif_files:
-        md_path = gif_path.with_suffix('.md')
-        if md_path.exists():
-            logger.info(f'Skip (already OCR): {gif_path.name}')
-            continue
-
-        logger.info(f'OCR: {gif_path.name}')
-        try:
-            gif_bytes = gif_path.read_bytes()
-            text = ocr_gif_fast(gif_bytes)
-            title = gif_path.stem
-            md_path.write_text(f'### {title}\n\n{text}\n', encoding='utf-8')
-            logger.info(f'  -> {len(text)} chars')
-        except Exception as e:
-            logger.error(f'  Failed: {e}')
+            logger.info(f'OCR: {gif_path.name}')
+            try:
+                gif_bytes = gif_path.read_bytes()
+                text = ocr_gif_fast(gif_bytes)
+                title = gif_path.stem
+                md_path.write_text(f'### {title}\n\n{text}\n', encoding='utf-8')
+                logger.info(f'  -> {len(text)} chars')
+            except Exception as e:
+                logger.error(f'  Failed: {e}')
 
 
 if __name__ == '__main__':
-    novel = Novel(43708)
-    novel.download(ext='epub')
+    novel = Novel(5976)
+    novel.download()

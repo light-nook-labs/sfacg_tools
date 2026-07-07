@@ -83,14 +83,20 @@ def _parse_audio_volumes(
 
 
 class Audio(Container):
-    def __init__(self, audio_id: int, fetcher: Fetcher | None = None, selectors: Selectors | None = None):
-        super().__init__(fetcher)
+    def __init__(
+        self,
+        audio_id: int,
+        output_dir: str | Path | None = None,
+        fetcher: Fetcher | None = None,
+        selectors: Selectors | None = None,
+    ):
+        super().__init__(output_dir, fetcher)
         self.id = str(audio_id)
         self.url = f'{URL_AUDIO}{audio_id}/'
         self.sel = selectors or Selectors()
 
         if not AUDIOBOOKS_JSON.exists():
-            raise FileNotFoundError(f'JSON文件不存在: {AUDIOBOOKS_JSON}\n请调用 Audio.scan() 更新')
+            Audio.scan()
 
         data = json.loads(AUDIOBOOKS_JSON.read_text(encoding='utf-8'))
         for item in data:
@@ -99,14 +105,20 @@ class Audio(Container):
                 break
         if not self.title:
             raise ValueError(f'未找到id为{audio_id}的有声小说，请调用 Audio.scan() 更新')
+        self._setup()
 
     @staticmethod
     def scan(
-        start: int = 0, end: int = 200, fetcher: Fetcher | None = None, workers: int = 20
+        start: int = 0, end: int = 200, fetcher: Fetcher | None = None, workers: int = 20, force: bool = False
     ) -> list[dict[str, int | str]]:
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         from tqdm import tqdm
+
+        if not force and AUDIOBOOKS_JSON.exists():
+            data = json.loads(AUDIOBOOKS_JSON.read_text(encoding='utf-8'))
+            logger.bind(force=True).info(f'从缓存加载 {len(data)} 本有声小说')
+            return data
 
         if fetcher is None:
             fetcher = Fetcher(default_delay=0.05)
@@ -176,6 +188,5 @@ class Audio(Container):
 
 
 if __name__ == '__main__':
-    Audio.scan()
-    audio = Audio(153)
+    audio = Audio(19)
     audio.download()

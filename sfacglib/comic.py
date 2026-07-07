@@ -9,11 +9,9 @@ from loguru import logger
 from tqdm import tqdm
 
 from .base import Container, Item, Section, _sanitize_filename
-from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_BASE, COMIC_READER_BASE, WORKERS_CHAPTER
-from .convert import convert_to_epub, convert_to_pdf
+from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE, WORKERS_CHAPTER
 from .fetcher import Fetcher
 from .models import Catalog, CatalogItem, CatalogSection
-from .progress import ProgressTracker
 from .selectors import Selectors
 
 
@@ -157,11 +155,19 @@ class ComicChapter(Section):
 
 
 class Comic(Container):
-    def __init__(self, url: str, fetcher: Fetcher | None = None, selectors: Selectors | None = None):
-        super().__init__(fetcher)
+    def __init__(
+        self,
+        url: str,
+        output_dir: str | Path | None = None,
+        fetcher: Fetcher | None = None,
+        selectors: Selectors | None = None,
+    ):
+        super().__init__(output_dir, fetcher)
         self.url = url
         self.id = self._extract_id(url)
         self.sel = selectors or Selectors()
+        self.get_info()
+        self._setup()
 
     @staticmethod
     def _extract_id(url: str) -> str:
@@ -295,61 +301,12 @@ class Comic(Container):
 
     def download(
         self,
-        path: str | Path = './',
-        file_type: str = 'dir',
-        local_images: bool = True,
-        tracker: ProgressTracker | None = None,
         start_chapter: str | None = None,
         end_chapter: str | None = None,
         chapter_range: str | None = None,
     ):
-        path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
-
-        if file_type not in ('dir', 'html', 'epub', 'pdf'):
-            logger.error(f'不支持的格式: {file_type}')
-            return
-
         sections = self.get_sections()
         sections = self._filter_sections(sections, start_chapter, end_chapter, chapter_range)
-
-        info_md, info_html = self.get_info()
-        dir_path = path / _sanitize_filename(self.title)
-        dir_path.mkdir(parents=True, exist_ok=True)
-
-        catalog = Catalog(
-            id=self.id,
-            title=self.title,
-            author=self.author,
-            cover=self.cover,
-            intro=info_md,
-        )
-
-        if file_type == 'html' and not local_images:
-            logger.warning('使用URL模式: 图片链接随时可能失效，建议使用 local_images=True 下载到本地')
-
-            for section in sections:
-                catalog_section = CatalogSection(
-                    idx=section.idx,
-                    title=section.title,
-                    items=[],
-                )
-                for item in section.get_items():
-                    catalog_section.items.append(
-                        CatalogItem(
-                            idx=item.idx,
-                            title=item.title,
-                            url=item.url,
-                            file='',
-                        )
-                    )
-                catalog.sections.append(catalog_section)
-
-            catalog.save(dir_path / 'catalog.json')
-
-            self._export_html(dir_path, sections, local_images=False)
-            logger.bind(force=True).info(f'HTML保存到 {dir_path}')
-            return
 
         all_items = []
         for section in sections:
@@ -360,27 +317,43 @@ class Comic(Container):
             logger.error('没有可下载的内容')
             return
 
-        logger.bind(force=True).info(f'共 {len(all_items)} 页待下载')
+        to_download = []
+        for section, item in all_items:
+            safe_section = _sanitize_filename(section.title)
+            section_dir = self.dir_path / f'ch_{section.idx:03d}_{safe_section}'
+            safe_title = _sanitize_filename(item.title)
+            if safe_title:
+                filename = f'page_{item.idx:03d}_{safe_title}.jpg'
+            else:
+                filename = f'page_{item.idx:03d}.jpg'
+            save_path = section_dir / filename
 
-        item_list = [{'url': i.url, 'title': i.title} for _, i in all_items]
-        task_id = tracker.create_task('comic', self.title, self.id, '', chapters=item_list) if tracker else None
+            if save_path.exists():
+                continue
+            to_download.append((section, item, save_path))
+
+        skip_count = len(all_items) - len(to_download)
+        if skip_count:
+            logger.bind(force=True).info(f'跳过已下载: {skip_count} 页')
+
+        if not to_download:
+            logger.bind(force=True).info('所有内容已下载完成')
+            return self.dir_path
+
+        task_id = f'comic_{self.id}'
+        self.tracker.create_task(
+            'comic', self.title, self.id, '', chapters=[{'url': i.url, 'title': i.title} for _, i, _ in to_download]
+        )
+
+        logger.bind(force=True).info(f'共 {len(to_download)} 页待下载')
 
         lock = threading.Lock()
-        pbar = tqdm(total=len(all_items), desc=self.title, unit='page')
+        pbar = tqdm(total=len(to_download), desc=self.title, unit='page')
 
         section_map: dict[int, CatalogSection] = {}
         with ThreadPoolExecutor(max_workers=WORKERS_CHAPTER) as executor:
             futures = {}
-            for section, item in all_items:
-                safe_section = _sanitize_filename(section.title)
-                section_dir = dir_path / f'ch_{section.idx:03d}_{safe_section}'
-                section_dir.mkdir(exist_ok=True)
-                safe_title = _sanitize_filename(item.title)
-                if safe_title:
-                    filename = f'page_{item.idx:03d}_{safe_title}.jpg'
-                else:
-                    filename = f'page_{item.idx:03d}.jpg'
-                save_path = section_dir / filename
+            for section, item, save_path in to_download:
                 futures[executor.submit(item.download, save_path, pbar, lock)] = (
                     section,
                     item,
@@ -391,8 +364,7 @@ class Comic(Container):
                 section, item, save_path = futures[future]
                 try:
                     future.result()
-                    if tracker and task_id:
-                        tracker.mark_done(task_id, item.url)
+                    self.tracker.mark_done(task_id, item.url)
                     if section.idx not in section_map:
                         section_map[section.idx] = CatalogSection(
                             idx=section.idx,
@@ -405,55 +377,44 @@ class Comic(Container):
                             idx=item.idx,
                             title=item.title,
                             url=item.url,
-                            file=str(save_path.relative_to(dir_path)),
+                            file=str(save_path.relative_to(self.dir_path)),
                         )
                     )
                 except Exception as e:
                     logger.error(f'Failed: {item.title} - {e}')
-                    if tracker and task_id:
-                        tracker.mark_failed(task_id, item.url, str(e))
+                    self.tracker.mark_failed(task_id, item.url, str(e))
                     if pbar and lock:
                         with lock:
                             pbar.update(1)
 
         pbar.close()
+
+        catalog = Catalog(
+            id=self.id,
+            title=self.title,
+            author=self.author,
+            cover=self.cover,
+            intro=self.intro,
+        )
         catalog.sections = sorted(section_map.values(), key=lambda s: s.idx)
+        catalog.save(self.dir_path / 'catalog.json')
 
-        catalog.save(dir_path / 'catalog.json')
-        (dir_path / 'info.md').write_text(info_md, encoding='utf-8')
+        self.tracker.finalize_task(task_id)
 
-        if tracker and task_id:
-            tracker.finalize_task(task_id)
-
-        logger.bind(force=True).info(f'目录保存到 {dir_path}')
-
-        if file_type == 'html':
-            self._export_html(dir_path, sections, local_images=True)
-        elif file_type == 'epub':
-            convert_to_epub(dir_path, self.fetcher)
-        elif file_type == 'pdf':
-            convert_to_pdf(dir_path, fetcher=self.fetcher)
+        logger.bind(force=True).info(f'目录保存到 {self.dir_path}')
 
     def export_html(
         self,
-        path: str | Path = './',
         local_images: bool = True,
         start_chapter: str | None = None,
         end_chapter: str | None = None,
         chapter_range: str | None = None,
     ):
-        path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
-
         if not local_images:
             logger.warning('使用URL模式: 图片链接随时可能失效，建议使用 local_images=True 下载到本地')
 
         sections = self.get_sections()
         sections = self._filter_sections(sections, start_chapter, end_chapter, chapter_range)
-
-        info_md, info_html = self.get_info()
-        dir_path = path / _sanitize_filename(self.title)
-        dir_path.mkdir(parents=True, exist_ok=True)
 
         if local_images:
             all_items = []
@@ -468,7 +429,7 @@ class Comic(Container):
                     futures = {}
                     for section, item in all_items:
                         safe_section = _sanitize_filename(section.title)
-                        section_dir = dir_path / f'ch_{section.idx:03d}_{safe_section}'
+                        section_dir = self.dir_path / f'ch_{section.idx:03d}_{safe_section}'
                         section_dir.mkdir(exist_ok=True)
                         safe_title = _sanitize_filename(item.title)
                         if safe_title:
@@ -488,8 +449,8 @@ class Comic(Container):
                                     pbar.update(1)
                 pbar.close()
 
-        self._export_html(dir_path, sections, local_images)
-        logger.bind(force=True).info(f'HTML保存到 {dir_path}')
+        self._export_html(self.dir_path, sections, local_images)
+        logger.bind(force=True).info(f'HTML保存到 {self.dir_path}')
 
     def _export_html(self, dir_path: Path, sections: list[ComicChapter], local_images: bool = True):
         catalog_path = dir_path / 'catalog.json'
@@ -558,6 +519,5 @@ img {{ max-width: 100%; height: auto; display: block; margin: 10px auto; }}
 
 
 if __name__ == '__main__':
-    comic_url = f'{COMIC_BASE}/b/ZXNWM/'
-    comic = Comic(comic_url)
-    comic.download(file_type='dir')
+    comic = Comic('https://manhua.sfacg.com/mh/LYZJ/')
+    comic.download()

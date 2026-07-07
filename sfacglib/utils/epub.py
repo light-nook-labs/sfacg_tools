@@ -8,9 +8,9 @@ from ebooklib import epub
 from ebooklib.epub import EpubHtml
 from loguru import logger
 
-from .config import WORKERS_EPUB_IMG
-from .fetcher import Fetcher
-from .utils import run_tasks
+from ..config import WORKERS_EPUB_IMG
+from ..fetcher import Fetcher
+from . import run_tasks, sanitize_filename
 
 _MEDIA_TYPES = {
     '.jpg': 'image/jpeg',
@@ -229,8 +229,6 @@ def download_epub(
     book.add_item(epub.EpubNav())
     book.spine = spine
 
-    from .utils import sanitize_filename
-
     safe_title = sanitize_filename(title)
     epub_path = path / f'{safe_title}.epub'
     try:
@@ -334,8 +332,6 @@ def convert_md_to_epub(
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
     book.spine = spine
-
-    from .utils import sanitize_filename
 
     safe_title = sanitize_filename(title)
     epub_path = path / f'{safe_title}.epub'
