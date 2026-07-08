@@ -8,8 +8,9 @@ from loguru import logger
 from .base import Container, InvalidNovelError, Item, Section
 from .config import API_COMIC_PICS, API_COMIC_VIP, COMIC_READER_BASE, URL_COMIC_INDEX
 from .fetcher import Fetcher
+from .models.catalog import ComicCatalog, ComicCatalogSection
 from .selectors import Selectors
-from .utils import fix_url_protocol, save_json
+from .utils import fix_url_protocol
 from .utils import sanitize_filename as _sanitize_filename
 
 
@@ -43,7 +44,8 @@ class ComicChapter(Section):
         self.chapter_url = chapter_url
         self.fetcher = fetcher
         self.sel = sel
-        self.dir_name = dir_name or f'ch_{idx:03d}_{_sanitize_filename(title)}'
+        if dir_name:
+            self.dir_name = dir_name
         self._html: str = ''
 
     def _get_html(self) -> str:
@@ -176,6 +178,9 @@ class Comic(Container):
     def __repr__(self):
         return f'<Comic: {self.cid}>'
 
+    def _load_catalog(self) -> ComicCatalog:
+        return ComicCatalog.load(self.dir_path / 'catalog.json')
+
     def setup(self) -> bool:
         try:
             html = self.fetcher.get_html(self.url)
@@ -249,25 +254,25 @@ class Comic(Container):
                 image_urls = [page.url for page in ch.get_items()]
 
                 sections.append(
-                    {
-                        'idx': ch_idx,
-                        'title': ch_title,
-                        'chapter_url': ch_url,
-                        'dir': dir_name,
-                        'image_urls': image_urls,
-                    }
+                    ComicCatalogSection(
+                        idx=ch_idx,
+                        title=ch_title,
+                        chapter_url=ch_url,
+                        dir=dir_name,
+                        image_urls=image_urls,
+                    )
                 )
 
-            catalog = {
-                'id': self.id,
-                'title': self.title,
-                'author': self.author,
-                'cover': self.cover,
-                'cover_file': cover_file,
-                'description': description,
-                'sections': sections,
-            }
-            save_json(catalog, self.dir_path / 'catalog.json')
+            catalog = ComicCatalog(
+                id=self.id,
+                title=self.title,
+                author=self.author,
+                cover=self.cover,
+                cover_file=cover_file,
+                description=description,
+                sections=sections,
+            )
+            catalog.save(self.dir_path / 'catalog.json')
 
             return True
         except Exception as e:
@@ -277,14 +282,14 @@ class Comic(Container):
     def get_download_items(self) -> list[tuple[ComicChapter, ComicPage]]:
         catalog = self._load_catalog()
         chapters = []
-        for sec in catalog.get('sections', []):
+        for sec in catalog.sections:
             chapter = ComicChapter(
-                idx=sec['idx'],
-                title=sec['title'],
-                chapter_url=sec['chapter_url'],
+                idx=sec.idx,
+                title=sec.title,
+                chapter_url=sec.chapter_url,
                 fetcher=self.fetcher,
                 sel=self.sel,
-                dir_name=sec.get('dir'),
+                dir_name=sec.dir,
             )
             for page in chapter.get_items():
                 chapters.append((chapter, page))

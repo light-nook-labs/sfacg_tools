@@ -16,8 +16,15 @@ from .config import (
     VIP_RETRY_DELAYS,
 )
 from .fetcher import Fetcher
+from .models.catalog import (
+    NovelCatalog,
+    NovelCatalogItem,
+    NovelCatalogSection,
+    ReviewCatalog,
+    ReviewCatalogSection,
+)
 from .selectors import Selectors
-from .utils import fix_url_protocol, save_json, validate_gif
+from .utils import fix_url_protocol, validate_gif
 from .utils import sanitize_filename as _sanitize_filename
 
 ICN_IMG = '\ue905'
@@ -141,10 +148,12 @@ class NovelChapter(Item):
 
 
 class NovelVolume(Section):
-    def __init__(self, idx: int, title: str, vol_id: str, chapters: list[NovelChapter]):
+    def __init__(self, idx: int, title: str, vol_id: str, chapters: list[NovelChapter], dir_name: str = ''):
         super().__init__(idx, title)
         self.vol_id = vol_id
         self.chapters = chapters
+        if dir_name:
+            self.dir_name = dir_name
 
     def get_items(self) -> list[NovelChapter]:
         return self.chapters
@@ -154,11 +163,31 @@ class NovelVolume(Section):
         dir_path: Path,
         ext: str = 'md',
         item_prefix: str = 'ch',
-        pbar=None,
-        lock=None,
-        executor=None,
     ):
-        super().download(dir_path, ext=ext, item_prefix=item_prefix, pbar=pbar, lock=lock, executor=executor)
+        section_dir = dir_path / self.dir_name
+        section_dir.mkdir(parents=True, exist_ok=True)
+
+        items = self.get_items()
+        lock = __import__('threading').Lock()
+        pbar = __import__('tqdm').tqdm(total=len(items), desc=self.title, unit='item')
+
+        for item in items:
+            safe_title = _sanitize_filename(item.title)
+            filename = (
+                f'{item_prefix}_{item.idx:03d}_{safe_title}.{ext}'
+                if safe_title
+                else f'{item_prefix}_{item.idx:03d}.{ext}'
+            )
+            save_path = section_dir / filename
+            try:
+                item.download(save_path, pbar, lock)
+            except Exception as e:
+                logger.error(f'Failed: {item.title} - {e}')
+                with lock:
+                    pbar.update(1)
+
+        pbar.close()
+        return section_dir
 
 
 class ReviewComment(Item):
@@ -268,47 +297,51 @@ class Review(Container):
 
             sections = []
             for idx, cid in enumerate(reversed(review_ids), start=1):
-                safe_title = _sanitize_filename(self.title)
                 sections.append(
-                    {
-                        'idx': idx,
-                        'title': f'书评_{idx}',
-                        'cid': cid,
-                        'file': f'review_{idx:03d}_{safe_title}.md',
-                    }
+                    ReviewCatalogSection(
+                        idx=idx,
+                        title=f'书评_{idx}',
+                        cid=cid,
+                    )
                 )
 
-            catalog = {
-                'id': self.id,
-                'title': self.title,
-                'author': self.author,
-                'cover': self.cover,
-                'info_file': 'info.md',
-                'sections': sections,
-            }
-            save_json(catalog, self.dir_path / 'catalog.json')
+            catalog = ReviewCatalog(
+                id=self.id,
+                title=self.title,
+                info_file='info.md',
+                sections=sections,
+            )
+            catalog.save(self.dir_path / 'catalog.json')
 
             return True
         except Exception as e:
             logger.error(f'Setup failed: {e}')
             return False
 
+    def _load_catalog(self) -> ReviewCatalog:
+        return ReviewCatalog.load(self.dir_path / 'catalog.json')
+
     def get_download_items(self) -> list[tuple[None, ReviewComment]]:
         catalog = self._load_catalog()
         items = []
-        for sec in catalog.get('sections', []):
+        for sec in catalog.sections:
             items.append(
                 (
                     None,
                     ReviewComment(
-                        idx=sec['idx'],
-                        cid=sec['cid'],
+                        idx=sec.idx,
+                        cid=sec.cid,
                         title=self.title,
                         fetcher=self.fetcher,
                     ),
                 )
             )
         return items
+
+    def _compute_save_path(self, section, item, ext: str, item_prefix: str) -> Path:
+        safe_title = _sanitize_filename(self.title)
+        filename = f'review_{item.idx:03d}_{safe_title}.md'
+        return self.dir_path / filename
 
     def _get_review_ids(self, max_pages: int = 100) -> list[str]:
         page = 0
@@ -350,6 +383,9 @@ class Novel(Container):
 
     def download(self, ext: str = 'md'):
         super().download(ext=ext, item_prefix='ch')
+
+    def _load_catalog(self) -> NovelCatalog:
+        return NovelCatalog.load(self.dir_path / 'catalog.json')
 
     def setup(self) -> bool:
         try:
@@ -461,35 +497,35 @@ Generated by [SFACG Spider](https://github.com/light-nook-labs/sfacg)
                         file = f'sec_{vol_idx:03d}_{_sanitize_filename(vol_title)}/ch_{ch_idx:03d}_{safe_title}.md'
 
                         items.append(
-                            {
-                                'idx': ch_idx,
-                                'title': title,
-                                'chapter_id': chapter_id,
-                                'is_gif': is_gif,
-                                'file': file,
-                            }
+                            NovelCatalogItem(
+                                idx=ch_idx,
+                                title=title,
+                                chapter_id=chapter_id,
+                                is_gif=is_gif,
+                                file=file,
+                            )
                         )
 
                 sections.append(
-                    {
-                        'idx': vol_idx,
-                        'title': vol_title,
-                        'vol_id': vol_id,
-                        'dir': f'sec_{vol_idx:03d}_{_sanitize_filename(vol_title)}',
-                        'items': items,
-                    }
+                    NovelCatalogSection(
+                        idx=vol_idx,
+                        title=vol_title,
+                        vol_id=vol_id,
+                        dir=f'sec_{vol_idx:03d}_{_sanitize_filename(vol_title)}',
+                        items=items,
+                    )
                 )
 
-            catalog = {
-                'id': self.id,
-                'title': self.title,
-                'author': self.author,
-                'cover': self.cover,
-                'cover_file': cover_file,
-                'info_file': 'info.md',
-                'sections': sections,
-            }
-            save_json(catalog, self.dir_path / 'catalog.json')
+            catalog = NovelCatalog(
+                id=self.id,
+                title=self.title,
+                author=self.author,
+                cover=self.cover,
+                cover_file=cover_file,
+                info_file='info.md',
+                sections=sections,
+            )
+            catalog.save(self.dir_path / 'catalog.json')
 
             return True
         except Exception as e:
@@ -499,30 +535,45 @@ Generated by [SFACG Spider](https://github.com/light-nook-labs/sfacg)
     def get_download_items(self) -> list[tuple[NovelVolume, NovelChapter]]:
         catalog = self._load_catalog()
         items = []
-        for sec in catalog.get('sections', []):
+        for sec in catalog.sections:
             chapters = []
-            for item in sec.get('items', []):
+            for item in sec.items:
                 chapters.append(
                     NovelChapter(
-                        idx=item['idx'],
-                        title=item['title'],
-                        chapter_id=item['chapter_id'],
+                        idx=item.idx,
+                        title=item.title,
+                        chapter_id=item.chapter_id,
                         fetcher=self.fetcher,
                         sel=self.sel,
                         novel_id=self.nid,
-                        vol_id=sec['vol_id'],
-                        is_gif=item.get('is_gif', False),
+                        vol_id=sec.vol_id,
+                        is_gif=item.is_gif,
                     )
                 )
-            volume = NovelVolume(sec['idx'], sec['title'], sec['vol_id'], chapters)
+            volume = NovelVolume(sec.idx, sec.title, sec.vol_id, chapters, dir_name=sec.dir)
             for chapter in chapters:
                 items.append((volume, chapter))
         return items
 
     def create_vol(self, idx: int) -> NovelVolume | None:
-        for volume in self.get_download_items():
-            if volume.idx == idx:
-                return volume
+        catalog = self._load_catalog()
+        for sec in catalog.sections:
+            if sec.idx == idx:
+                chapters = []
+                for item in sec.items:
+                    chapters.append(
+                        NovelChapter(
+                            idx=item.idx,
+                            title=item.title,
+                            chapter_id=item.chapter_id,
+                            fetcher=self.fetcher,
+                            sel=self.sel,
+                            novel_id=self.nid,
+                            vol_id=sec.vol_id,
+                            is_gif=item.is_gif,
+                        )
+                    )
+                return NovelVolume(sec.idx, sec.title, sec.vol_id, chapters, dir_name=sec.dir)
         return None
 
     def create_review(self) -> Review:

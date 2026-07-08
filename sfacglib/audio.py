@@ -11,8 +11,9 @@ from loguru import logger
 from .base import Container, InvalidNovelError, Item, Section
 from .config import AUDIOBOOKS_JSON, URL_AUDIO, WORKERS_AUDIO_CHAPTER, _ensure_config
 from .fetcher import Fetcher
+from .models.catalog import AudioCatalog, AudioCatalogItem, AudioCatalogSection
 from .selectors import Selectors
-from .utils import mobile_url, parse_volume_ul, save_json
+from .utils import mobile_url, parse_volume_ul
 from .utils import sanitize_filename as _sanitize_filename
 
 
@@ -188,6 +189,9 @@ class Audio(Container):
         if not self.setup():
             raise InvalidNovelError(f'HTTP错误或URL无效 (aid={audio_id})')
 
+    def _load_catalog(self) -> AudioCatalog:
+        return AudioCatalog.load(self.dir_path / 'catalog.json')
+
     @staticmethod
     def scan(
         start: int = 0, end: int = 500, fetcher: Fetcher | None = None, workers: int = 20, force: bool = False
@@ -256,10 +260,10 @@ class Audio(Container):
 
             html = self.fetcher.get_html(self.url)
             soup = BeautifulSoup(html, 'html.parser')
-            sections = _parse_audio_volumes(soup, self.fetcher)
+            raw_sections = _parse_audio_volumes(soup, self.fetcher)
 
             all_items = []
-            for sec in sections:
+            for sec in raw_sections:
                 for item in sec['items']:
                     safe_title = _sanitize_filename(item['title'])
                     item['file'] = f'{sec["dir"]}/item_{item["idx"]:03d}_{safe_title}.mp3'
@@ -281,14 +285,36 @@ class Audio(Container):
             self.cover = cover_url
             cover_file = self._download_cover()
 
-            catalog = {
-                'id': self.id,
-                'title': self.title,
-                'cover': cover_url,
-                'cover_file': cover_file,
-                'sections': sections,
-            }
-            save_json(catalog, self.dir_path / 'catalog.json')
+            sections = []
+            for sec in raw_sections:
+                audio_items = []
+                for item in sec['items']:
+                    audio_items.append(
+                        AudioCatalogItem(
+                            idx=item['idx'],
+                            title=item['title'],
+                            url=item['url'],
+                            file=item.get('file', ''),
+                            mp3_url=item.get('mp3_url'),
+                        )
+                    )
+                sections.append(
+                    AudioCatalogSection(
+                        idx=sec['idx'],
+                        title=sec['title'],
+                        dir=sec['dir'],
+                        items=audio_items,
+                    )
+                )
+
+            catalog = AudioCatalog(
+                id=self.id,
+                title=self.title,
+                cover=cover_url,
+                cover_file=cover_file,
+                sections=sections,
+            )
+            catalog.save(self.dir_path / 'catalog.json')
 
             return True
         except Exception as e:
@@ -298,19 +324,19 @@ class Audio(Container):
     def get_download_items(self) -> list[tuple[AudioVolume, AudioChapter]]:
         catalog = self._load_catalog()
         items = []
-        for sec in catalog.get('sections', []):
+        for sec in catalog.sections:
             chapters = []
-            for item in sec.get('items', []):
+            for item in sec.items:
                 chapters.append(
                     AudioChapter(
-                        idx=item['idx'],
-                        title=item['title'],
-                        url=item['url'],
+                        idx=item.idx,
+                        title=item.title,
+                        url=item.url,
                         fetcher=self.fetcher,
-                        mp3_url=item.get('mp3_url'),
+                        mp3_url=item.mp3_url,
                     )
                 )
-            volume = AudioVolume(sec['idx'], sec['title'], chapters)
+            volume = AudioVolume(sec.idx, sec.title, chapters)
             for chapter in chapters:
                 items.append((volume, chapter))
         return items

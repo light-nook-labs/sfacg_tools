@@ -28,6 +28,7 @@ API_COMIC_PICS = f'{COMIC_BASE}/ajax/Common.ashx'
 API_VIP_IMAGE = f'{PC_BASE}/ajax/ashx/common.ashx'
 API_COMIC_VIP = f'{COMIC_READER_BASE}/ajax/Common.ashx'
 API_LOLOBUN = f'{LOLOBUN_BASE}/ajax/Common.ashx'
+API_LOLOBUN_COMIC = f'{LOLOBUN_BASE}/ajax/comic.ashx'
 
 VIP_IMAGE_WIDTH: int = 5000
 VIP_DELAY_RANGE: tuple[float, float] = (2.0, 5.0)
@@ -158,6 +159,8 @@ __all__ = [
     'API_COMIC_PICS',
     'API_COMIC_VIP',
     'API_HTML5',
+    'API_LOLOBUN',
+    'API_LOLOBUN_COMIC',
     'API_VIP_IMAGE',
     'AUDIOBOOKS_JSON',
     'CHATBOT_MAX_FILE_SIZE',

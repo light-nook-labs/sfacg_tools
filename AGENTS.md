@@ -19,8 +19,14 @@ sfacglib/
   novel.py        # Novel downloader (Novel, NovelVolume, NovelChapter, ReviewComment, Review)
   comic.py        # Comic downloader (Comic, ComicChapter, ComicPage)
   audio.py        # Audiobook downloader (Audio, AudioVolume, AudioChapter)
+  lolobun_novel.py # LoLoBun English novel downloader (LoLoBunNovel, LoLoBunNovelChapter)
+  lolobun_comic.py # LoLoBun English comic downloader (LoLoBunComic, LoLoBunComicChapter)
   search.py       # Search API (keyword, related novels, author works)
   nlp.py          # NLP post-processing (merge wrapped lines)
+  models/         # Pydantic models
+    __init__.py   # Re-exports all catalog types
+    catalog.py    # Per-type catalog models (NovelCatalog, ComicCatalog, AudioCatalog, etc.)
+    search.py     # SearchItem model
   utils/          # Shared utilities
     __init__.py   # sanitize_filename, fix_url_protocol, validate_gif, run_tasks, load_json, save_json
     json.py       # JSON file utilities (load_json, save_json)
@@ -46,6 +52,8 @@ opencode.json     # opencode project config
 | Comic | Comic | (flat, chapters as sections) | (pages fetched dynamically) |
 | Audio | Audio | AudioVolume | AudioChapter |
 | Review | Review | (flat, comments as sections) | (reviews downloaded directly) |
+| LoLoBun Novel | LoLoBunNovel | LoLoBunNovelVolume | LoLoBunNovelChapter |
+| LoLoBun Comic | LoLoBunComic | (flat, chapters as sections) | (pages fetched via API) |
 
 ### Container
 
@@ -58,7 +66,7 @@ opencode.json     # opencode project config
 ### Section
 
 - Provides `get_items()` — returns list of Items
-- Provides `download(dir_path, ext, item_prefix)` — downloads all items concurrently
+- Provides `download(dir_path, ext, item_prefix)` — downloads all items (used for partial/single-section downloads)
 
 ### Item
 
@@ -74,6 +82,9 @@ chapter = vol.create_chapter(3)  # → NovelChapter
 review = novel.create_review()   # → Review (independent)
 
 comic = Comic('LYZJ')           # takes cid, not URL
+
+lolobun_novel = LoLoBunNovel(5320265)  # takes nid from lolobun.com
+lolobun_comic = LoLoBunComic(20106)    # takes cid from lolobun.com
 ```
 
 ## Download Flow
@@ -140,7 +151,7 @@ Cookie validation uses `passport.sfacg.com/Ajax/GetLoginInfo.ashx` API. Cookies 
 
 ### VIP Chapter Processing
 
-VIP chapters have two types tracked by `CatalogItem.is_gif` (boolean):
+VIP chapters have two types tracked by `NovelCatalogItem.is_gif` (boolean):
 - `False` (free or image VIP) — normal download
 - `True` (encrypted VIP) — downloaded as `.gif`, requires OCR
 

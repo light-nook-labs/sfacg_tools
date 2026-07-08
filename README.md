@@ -15,6 +15,7 @@
 - VIP 章节处理（OCR / LLM 纠错）
 - Cookie 持久化登录
 - 多线程并发下载
+- LoLoBun 英文站支持（小说 + 漫画）
 
 ## 安装
 
@@ -93,6 +94,26 @@ convert('output/漫画目录', formats=['html', 'epub', 'pdf'])
 
 > [!NOTE]
 > 漫画的 HTML 默认使用外部图片链接。EPUB/PDF 仅支持页漫（宽高比相近），条漫会自动跳过。
+
+### 下载 LoLoBun 英文小说
+
+```python
+from sfacglib.lolobun_novel import LoLoBunNovel
+
+novel = LoLoBunNovel(5320265, output_dir='./output/')
+novel.download()                  # 下载所有章节为 .md
+novel.download(ext='epub')        # 下载后转换为 epub
+```
+
+### 下载 LoLoBun 英文漫画
+
+```python
+from sfacglib.lolobun_comic import LoLoBunComic
+
+comic = LoLoBunComic(20106, output_dir='./output/')
+comic.download()                  # 下载所有章节图片为 .jpg
+comic.download(ext='html')        # 下载后转换为 html
+```
 
 ### 搜索
 
@@ -195,6 +216,8 @@ sfacglib/
   novel.py          # 小说下载器（Novel/NovelVolume/NovelChapter/ReviewComment/Review）
   comic.py          # 漫画下载器（Comic/ComicChapter/ComicPage）
   audio.py          # 有声下载器（Audio/AudioVolume/AudioChapter）
+  lolobun_novel.py  # LoLoBun 英文小说下载器（LoLoBunNovel/LoLoBunNovelChapter）
+  lolobun_comic.py  # LoLoBun 英文漫画下载器（LoLoBunComic/LoLoBunComicChapter）
   audiobooks.json   # 有声目录缓存（备用副本）
   search.py         # 搜索 API（关键词、相关推荐、作者作品）
   nlp.py            # NLP 后处理（合并断行）
@@ -223,6 +246,8 @@ opencode.json       # opencode 项目配置
 | 漫画 | Comic | (flat, chapters as sections) | (pages fetched dynamically) |
 | 有声 | Audio | AudioVolume | AudioChapter |
 | 书评 | Review | (flat, comments as sections) | (reviews downloaded directly) |
+| LoLoBun 小说 | LoLoBunNovel | LoLoBunNovelVolume | LoLoBunNovelChapter |
+| LoLoBun 漫画 | LoLoBunComic | (flat, chapters as sections) | (pages fetched via API) |
 
 ### catalog.json 结构
 
